@@ -1,6 +1,14 @@
+// next.config.mjs
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  /* config options here */
+  async rewrites() {
+    return [
+      {
+        source: '/api/:path*',
+        destination: 'http://localhost:7230/:path*', // your backend
+      },
+    ];
+  },
 };
 
 export default nextConfig;
