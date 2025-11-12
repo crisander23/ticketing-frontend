@@ -1,4 +1,3 @@
-// components/TicketTable.js
 'use client';
 
 import { useMemo, useState } from 'react';
@@ -11,10 +10,11 @@ export default function TicketTable({
   onAssign,
   onStatusChange,
   inlineAction = false,
-  surface = 'light',
+  surface = 'dark',          // 'dark' | 'light'
   perPage = 10,
+  showImpact = true,
 }) {
-  const isAdmin = role === 'admin' || role === 'agent';
+  const isPrivileged = role === 'admin' || role === 'agent';
 
   // pagination
   const [page, setPage] = useState(1);
@@ -25,7 +25,7 @@ export default function TicketTable({
     return rows.slice(start, start + perPage);
   }, [rows, page, perPage]);
 
-  // inline edit state
+  // inline edit
   const [editRowId, setEditRowId] = useState(null);
   const [draftAgent, setDraftAgent] = useState('');
   const [draftStatus, setDraftStatus] = useState('open');
@@ -49,167 +49,177 @@ export default function TicketTable({
       }
       await Promise.all(ops);
       setEditRowId(null);
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   };
 
-  const headCls = 'bg-slate-50 text-slate-600 dark:bg-slate-800 dark:text-slate-200';
-  const th = 'px-4 py-3 text-left font-semibold';
-  const divide = 'divide-y divide-slate-200 dark:divide-slate-800';
-  const hover = 'hover:bg-slate-50 dark:hover:bg-slate-800/60';
-  const linkCls = 'text-slate-800 hover:underline dark:text-slate-100';
+  // theme tokens
+  const isDark = surface === 'dark';
+  const tone = {
+    tableWrap: `overflow-hidden rounded-xl border ${isDark ? 'border-white/15 bg-white/5' : 'border-slate-200 bg-white'}`,
+    head: isDark ? 'bg-white/10 text-white/90' : 'bg-slate-50 text-slate-700',
+    th: 'px-4 py-3 text-left text-xs uppercase font-semibold',
+    rowHover: isDark ? 'hover:bg-white/10' : 'hover:bg-slate-50',
+    td: `px-4 py-3 ${isDark ? 'text-white/90' : 'text-slate-800'}`,
+    sub: isDark ? 'text-white/80' : 'text-slate-700',
+    pale: isDark ? 'text-white/70' : 'text-slate-500',
+    input: `rounded-md border px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 ${
+      isDark ? 'border-white/15 bg-transparent text-white focus:ring-blue-500' : 'border-slate-300 bg-white text-slate-900 focus:ring-slate-300'
+    }`,
+    paginateBtn: `rounded-md px-2 py-1 ${
+      isDark ? 'border border-white/15 bg-transparent text-white hover:bg-white/10 disabled:opacity-50' :
+               'border border-slate-300 bg-white text-slate-900 hover:bg-slate-50 disabled:opacity-50'
+    }`,
+    actionBtn: `rounded-lg px-3 py-1.5 text-xs font-semibold ${
+      isDark ? 'border border-white/15 bg-transparent text-white hover:bg-white/10' :
+               'border border-slate-300 bg-white text-slate-900 hover:bg-slate-50'
+    }`,
+    footer: `flex items-center justify-between p-3 border-t ${isDark ? 'border-white/10 text-white/80' : 'border-slate-200 text-slate-600'} text-xs`,
+  };
+
+  // --- SAFE colgroup: build array, filter nulls (no whitespace nodes) ---
+  const colDefs = useMemo(() => ([
+    <col key="id" className="w-[90px]" />,
+    <col key="title" />,
+    isPrivileged ? <col key="client" className="hidden md:table-column w-[18%]" /> : null,
+    <col key="agent" className="w-[16%]" />,
+    showImpact ? <col key="impact" className="w-[12%]" /> : null,
+    <col key="status" className="w-[14%]" />,
+    <col key="created" className="hidden sm:table-column w-[18%]" />,
+    isPrivileged ? <col key="action" className="w-[120px]" /> : null,
+  ].filter(Boolean)), [isPrivileged, showImpact]);
 
   return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full text-sm">
-        <thead className={headCls}>
-          <tr className="text-xs uppercase">
-            <th className={th}>ID</th>
-            <th className={th}>Title</th>
-            {isAdmin && <th className={`${th} hidden md:table-cell`}>Client</th>}
-            <th className={th}>Agent</th>
-            <th className={th}>Status</th>
-            <th className={`${th} whitespace-nowrap hidden sm:table-cell`}>Created</th>
-            {isAdmin && <th className={`${th} w-40`}>Action</th>}
-          </tr>
-        </thead>
+    <div className={tone.tableWrap}>
+      <div className="overflow-x-auto">
+        <table className="w-full table-fixed text-sm">
+          <colgroup>{colDefs}</colgroup>
 
-        <tbody className={divide}>
-          {pageRows.length === 0 && (
+          <thead className={tone.head}>
             <tr>
-              <td className="px-4 py-8 text-center text-slate-500 dark:text-slate-400" colSpan={7}>
-                No tickets found.
-              </td>
+              <th className={tone.th}>ID</th>
+              <th className={tone.th}>Title</th>
+              {isPrivileged && <th className={`${tone.th} hidden md:table-cell`}>Client</th>}
+              <th className={tone.th}>Agent</th>
+              {showImpact && <th className={tone.th}>Impact</th>}
+              <th className={tone.th}>Status</th>
+              <th className={`${tone.th} hidden sm:table-cell`}>Created</th>
+              {isPrivileged && <th className={tone.th}>Action</th>}
             </tr>
-          )}
+          </thead>
 
-          {pageRows.map((t) => {
-            const clientName = `${t.client_first_name || ''} ${t.client_last_name || ''}`.trim();
-            const agentName = t.agent_first_name
-              ? `${t.agent_first_name} ${t.agent_last_name}`.trim()
-              : (t.agent_name || 'Unassigned');
-            const created = t.created_at ? new Date(t.created_at).toLocaleString() : '—';
-            const isEditing = editRowId === t.ticket_id;
-            const tone = statusTone((t.status || '').toLowerCase());
-
-            return (
-              <tr key={t.ticket_id} className={hover}>
-                <td className="px-4 py-3 font-medium text-slate-800 whitespace-nowrap dark:text-slate-100">
-                  <Link href={`/tickets/${t.ticket_id}`} className={linkCls}>
-                    #{t.ticket_id}
-                  </Link>
+          <tbody className={isDark ? 'divide-y divide-white/10' : 'divide-y divide-slate-200'}>
+            {pageRows.length === 0 && (
+              <tr>
+                <td className={`px-4 py-8 text-center ${tone.pale}`} colSpan={isPrivileged ? (showImpact ? 8 : 7) : (showImpact ? 7 : 6)}>
+                  No tickets found.
                 </td>
+              </tr>
+            )}
 
-                <td className="px-4 py-3 text-slate-700 dark:text-slate-200">{t.title || '(no title)'}</td>
+            {pageRows.map((t) => {
+              const clientName = `${t.client_first_name || ''} ${t.client_last_name || ''}`.trim();
+              const agentName = t.agent_first_name
+                ? `${t.agent_first_name} ${t.agent_last_name}`.trim()
+                : (t.agent_name || 'Unassigned');
+              const created = t.created_at ? new Date(t.created_at).toLocaleString() : '—';
+              const isEditing = editRowId === t.ticket_id;
 
-                {isAdmin && (
-                  <td className="px-4 py-3 text-slate-700 hidden md:table-cell dark:text-slate-200">{clientName || '—'}</td>
-                )}
+              return (
+                <tr key={t.ticket_id} className={tone.rowHover}>
+                  <td className={`${tone.td} whitespace-nowrap`}>
+                    <Link href={`/tickets/${t.ticket_id}`} className={isDark ? 'text-white hover:underline' : 'text-slate-900 hover:underline'}>
+                      #{t.ticket_id}
+                    </Link>
+                  </td>
 
-                <td className="px-4 py-3">
-                  {inlineAction && isEditing ? (
-                    <select
-                      value={draftAgent}
-                      onChange={(e) => setDraftAgent(e.target.value)}
-                      className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-300
-                                 dark:bg-slate-900 dark:text-slate-100 dark:border-slate-700 dark:focus:ring-slate-700"
-                    >
-                      <option value="">Unassigned</option>
-                      {agentOptions.map((a) => (
-                        <option key={a.id} value={a.id}>{a.label}</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <span className="text-slate-700 dark:text-slate-200">{agentName}</span>
+                  <td className={tone.td}>{t.title || '(no title)'}</td>
+
+                  {isPrivileged && (
+                    <td className={`${tone.td} hidden md:table-cell`}>{clientName || '—'}</td>
                   )}
-                </td>
 
-                <td className="px-4 py-3">
-                  {inlineAction && isEditing ? (
-                    <select
-                      value={draftStatus}
-                      onChange={(e) => setDraftStatus(e.target.value)}
-                      className="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-300
-                                 dark:bg-slate-900 dark:text-slate-100 dark:border-slate-700 dark:focus:ring-slate-700"
-                    >
-                      {['open', 'in_progress', 'resolved', 'closed'].map(s => (
-                        <option key={s} value={s}>{s}</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold border ${tone.pill}`}>
-                      <span className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} />
-                      {t.status}
-                    </span>
-                  )}
-                </td>
-
-                <td className="px-4 py-3 text-slate-600 whitespace-nowrap hidden sm:table-cell dark:text-slate-400">{created}</td>
-
-                {isAdmin && (
-                  <td className="px-4 py-3">
-                    {inlineAction ? (
-                      isEditing ? (
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => saveEdit(t)}
-                            disabled={saving}
-                            className="rounded-lg bg-slate-900 text-white px-3 py-1.5 text-xs hover:bg-slate-800 disabled:opacity-60
-                                       dark:bg-slate-700 dark:hover:bg-slate-600"
-                          >
-                            {saving ? 'Saving…' : 'Save'}
-                          </button>
-                          <button
-                            onClick={cancelEdit}
-                            disabled={saving}
-                            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-800 hover:bg-slate-50
-                                       dark:bg-slate-900 dark:text-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => beginEdit(t)}
-                          className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-50
-                                     dark:bg-slate-900 dark:text-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
-                        >
-                          Action
-                        </button>
-                      )
+                  <td className={tone.td}>
+                    {inlineAction && isEditing ? (
+                      <select
+                        value={draftAgent}
+                        onChange={(e) => setDraftAgent(e.target.value)}
+                        className={tone.input}
+                      >
+                        <option className="text-black" value="">Unassigned</option>
+                        {agentOptions.map(a => <option className="text-black" key={a.id} value={a.id}>{a.label}</option>)}
+                      </select>
                     ) : (
-                      <span className="text-slate-500 text-xs dark:text-slate-400">—</span>
+                      <span className={tone.sub}>{agentName}</span>
                     )}
                   </td>
-                )}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
 
-      {/* Pagination footer */}
-      <div className="flex items-center justify-between p-3 border-t border-slate-200 text-xs text-slate-600
-                      dark:border-slate-800 dark:text-slate-400">
+                  {showImpact && (
+                    <td className={tone.td}>
+                      <ImpactBadge value={(t.impact || '').toString()} dark={isDark} />
+                    </td>
+                  )}
+
+                  <td className={tone.td}>
+                    {inlineAction && isEditing ? (
+                      <select
+                        value={draftStatus}
+                        onChange={(e) => setDraftStatus(e.target.value)}
+                        className={tone.input}
+                      >
+                        {['open','in_progress','resolved','closed'].map(s => <option className="text-black" key={s} value={s}>{s}</option>)}
+                      </select>
+                    ) : (
+                      <StatusSolid value={(t.status || '').toLowerCase()} />
+                    )}
+                  </td>
+
+                  <td className={`${tone.td} whitespace-nowrap hidden sm:table-cell`}>{created}</td>
+
+                  {isPrivileged && (
+                    <td className={tone.td}>
+                      {inlineAction ? (
+                        isEditing ? (
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => saveEdit(t)} disabled={saving}
+                              className={isDark ? 'rounded-lg bg-white text-gray-900 px-3 py-1.5 text-xs hover:bg-gray-100 disabled:opacity-60'
+                                                : 'rounded-lg bg-slate-900 text-white px-3 py-1.5 text-xs hover:bg-slate-800 disabled:opacity-60'}>
+                              {saving ? 'Saving…' : 'Save'}
+                            </button>
+                            <button onClick={cancelEdit} disabled={saving}
+                              className={isDark ? 'rounded-lg border border-white/15 bg-transparent text-white hover:bg-white/10 px-3 py-1.5 text-xs'
+                                                : 'rounded-lg border border-slate-300 bg-white text-slate-900 hover:bg-slate-50 px-3 py-1.5 text-xs'}>
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button onClick={() => beginEdit(t)}
+                            className={isDark ? 'rounded-lg border border-white/15 bg-transparent text-white hover:bg-white/10 px-3 py-1.5 text-xs'
+                                              : 'rounded-lg border border-slate-300 bg-white text-slate-900 hover:bg-slate-50 px-3 py-1.5 text-xs'}>
+                            Action
+                          </button>
+                        )
+                      ) : (
+                        <span className={`${tone.pale} text-xs`}>—</span>
+                      )}
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Pagination */}
+      <div className={tone.footer}>
         <div>
           Showing <b>{pageRows.length}</b> of <b>{total}</b> — Page {page}/{totalPages}
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setPage(p => Math.max(1, p - 1))}
-            disabled={page === 1}
-            className="rounded-md border border-slate-300 bg-white px-2 py-1 hover:bg-slate-50 disabled:opacity-50
-                       dark:bg-slate-900 dark:text-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
-          >
+          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className={tone.paginateBtn}>
             Previous
           </button>
-          <button
-            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-            disabled={page === totalPages}
-            className="rounded-md border border-slate-300 bg-white px-2 py-1 hover:bg-slate-50 disabled:opacity-50
-                       dark:bg-slate-900 dark:text-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
-          >
+          <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className={tone.paginateBtn}>
             Next
           </button>
         </div>
@@ -218,17 +228,34 @@ export default function TicketTable({
   );
 }
 
-function statusTone(status) {
-  switch (status) {
-    case 'open':
-      return { dot: 'bg-blue-500',   pill: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-200 dark:border-blue-800' };
-    case 'in_progress':
-      return { dot: 'bg-amber-500',  pill: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-200 dark:border-amber-800' };
-    case 'resolved':
-      return { dot: 'bg-violet-500', pill: 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-900/30 dark:text-violet-200 dark:border-violet-800' };
-    case 'closed':
-      return { dot: 'bg-emerald-500', pill: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-200 dark:border-emerald-800' };
-    default:
-      return { dot: 'bg-slate-400',  pill: 'bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-800/60 dark:text-slate-200 dark:border-slate-700' };
+/* ===== Solid status badge (matches KPI colors) ===== */
+function StatusSolid({ value }) {
+  const v = (value || '').toLowerCase();
+  let cls = 'bg-slate-200 text-slate-900'; // default
+  if (v === 'open')             cls = 'bg-blue-600 text-white';
+  else if (v === 'in_progress') cls = 'bg-amber-500 text-slate-900';
+  else if (v === 'resolved')    cls = 'bg-violet-600 text-white';
+  else if (v === 'closed')      cls = 'bg-emerald-600 text-white';
+  return (
+    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${cls}`}>
+      {value}
+    </span>
+  );
+}
+
+function ImpactBadge({ value, dark }) {
+  const v = (value || '').toString().toLowerCase();
+  let label = value || '—';
+  let cls;
+  if (['critical','high','severe','p1','p0'].includes(v)) {
+    cls = 'bg-rose-600 text-white';
+    label = label.toUpperCase();
+  } else if (['medium','moderate','p2'].includes(v)) {
+    cls = 'bg-amber-500 text-slate-900';
+  } else if (['low','minor','p3','p4'].includes(v)) {
+    cls = 'bg-emerald-600 text-white';
+  } else {
+    cls = dark ? 'bg-white/10 text-white' : 'bg-slate-200 text-slate-900';
   }
+  return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${cls}`}>{label}</span>;
 }
