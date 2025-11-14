@@ -1,3 +1,4 @@
+// components/TicketTable.js
 'use client';
 
 import { useMemo, useState } from 'react';
@@ -9,10 +10,12 @@ export default function TicketTable({
   agentOptions = [],
   onAssign,
   onStatusChange,
+  onRequestResolve,       // for agent "resolved" modal
   inlineAction = false,
-  surface = 'dark',          // 'dark' | 'light'
+  surface = 'dark',       // 'dark' | 'light'
   perPage = 10,
   showImpact = true,
+  agentEditable = true,
 }) {
   const isPrivileged = role === 'admin' || role === 'agent';
 
@@ -37,11 +40,21 @@ export default function TicketTable({
     setDraftStatus((row.status || 'open').toLowerCase());
   };
   const cancelEdit = () => { setEditRowId(null); setSaving(false); };
+
   const saveEdit = async (row) => {
     try {
       setSaving(true);
+
+      // If using resolution modal and user chose "resolved"
+      if (typeof onRequestResolve === 'function' && draftStatus === 'resolved') {
+        setEditRowId(null);
+        setSaving(false);
+        onRequestResolve(row.ticket_id);
+        return;
+      }
+
       const ops = [];
-      if (typeof onAssign === 'function' && (draftAgent ?? '') !== (row.agent_id ?? '')) {
+      if (agentEditable && typeof onAssign === 'function' && (draftAgent ?? '') !== (row.agent_id ?? '')) {
         ops.push(onAssign(row.ticket_id, draftAgent ? parseInt(draftAgent, 10) : null));
       }
       if (typeof onStatusChange === 'function' && draftStatus !== (row.status || 'open')) {
@@ -76,7 +89,53 @@ export default function TicketTable({
     footer: `flex items-center justify-between p-3 border-t ${isDark ? 'border-white/10 text-white/80' : 'border-slate-200 text-slate-600'} text-xs`,
   };
 
-  // --- SAFE colgroup: build array, filter nulls (no whitespace nodes) ---
+  // Derive/normalize Impact from multiple fields/encodings
+  const deriveImpact = (row) => {
+    // Try common field names
+    let raw =
+      row.impact ??
+      row.impact_level ??
+      row.priority ??
+      row.severity ??
+      row.p ??
+      row.Impact ?? // if backend sends PascalCase
+      '';
+
+    // Some backends send numbers (0..4) or strings like "1"
+    if (raw === 0 || raw === 1 || raw === 2 || raw === 3 || raw === 4) raw = String(raw);
+    if (typeof raw !== 'string') raw = String(raw ?? '');
+
+    const v = raw.trim().toLowerCase();
+
+    // Map various aliases/numerics to standard buckets
+    if (!v) return ''; // truly unknown
+
+    // Numeric or p-levels
+    if (['0', 'p0', 'p-0'].includes(v)) return 'critical';
+    if (['1', 'p1', 'p-1'].includes(v)) return 'high';
+    if (['2', 'p2', 'p-2'].includes(v)) return 'medium';
+    if (['3', '4', 'p3', 'p4', 'p-3', 'p-4'].includes(v)) return 'low';
+
+    // Wordy aliases
+    if (['critical', 'severe', 'blocker', 'urgent', 'system down'].includes(v)) return 'critical';
+    if (['high', 'major', 'key', 'important'].includes(v)) return 'high';
+    if (['medium', 'moderate', 'normal'].includes(v)) return 'medium';
+    if (['low', 'minor', 'trivial'].includes(v)) return 'low';
+
+    // If they put full sentences, attempt quick keyword match
+    if (v.includes('critical')) return 'critical';
+    if (v.includes('high')) return 'high';
+    if (v.includes('medium')) return 'medium';
+    if (v.includes('low')) return 'low';
+    if (v.includes('p0')) return 'critical';
+    if (v.includes('p1')) return 'high';
+    if (v.includes('p2')) return 'medium';
+    if (v.includes('p3') || v.includes('p4')) return 'low';
+
+    return ''; // unknown
+  };
+
+  // SAFE colgroup (no whitespace text nodes)
   const colDefs = useMemo(() => ([
     <col key="id" className="w-[90px]" />,
     <col key="title" />,
@@ -123,6 +182,7 @@ export default function TicketTable({
                 : (t.agent_name || 'Unassigned');
               const created = t.created_at ? new Date(t.created_at).toLocaleString() : '—';
               const isEditing = editRowId === t.ticket_id;
+              const impactNorm = deriveImpact(t); // <- use the robust derive
 
               return (
                 <tr key={t.ticket_id} className={tone.rowHover}>
@@ -139,7 +199,7 @@ export default function TicketTable({
                   )}
 
                   <td className={tone.td}>
-                    {inlineAction && isEditing ? (
+                    {inlineAction && isEditing && agentEditable ? (
                       <select
                         value={draftAgent}
                         onChange={(e) => setDraftAgent(e.target.value)}
@@ -155,7 +215,7 @@ export default function TicketTable({
 
                   {showImpact && (
                     <td className={tone.td}>
-                      <ImpactBadge value={(t.impact || '').toString()} dark={isDark} />
+                      <ImpactBadge value={impactNorm} dark={isDark} />
                     </td>
                   )}
 
@@ -166,7 +226,9 @@ export default function TicketTable({
                         onChange={(e) => setDraftStatus(e.target.value)}
                         className={tone.input}
                       >
-                        {['open','in_progress','resolved','closed'].map(s => <option className="text-black" key={s} value={s}>{s}</option>)}
+                        {['open','in_progress','resolved','closed'].map(s => (
+                          <option className="text-black" key={s} value={s}>{s}</option>
+                        ))}
                       </select>
                     ) : (
                       <StatusSolid value={(t.status || '').toLowerCase()} />
@@ -231,31 +293,43 @@ export default function TicketTable({
 /* ===== Solid status badge (matches KPI colors) ===== */
 function StatusSolid({ value }) {
   const v = (value || '').toLowerCase();
-  let cls = 'bg-slate-200 text-slate-900'; // default
+  let cls = 'bg-slate-200 text-slate-900';
   if (v === 'open')             cls = 'bg-blue-600 text-white';
   else if (v === 'in_progress') cls = 'bg-amber-500 text-slate-900';
   else if (v === 'resolved')    cls = 'bg-violet-600 text-white';
   else if (v === 'closed')      cls = 'bg-emerald-600 text-white';
   return (
     <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${cls}`}>
-      {value}
+      {value || '—'}
     </span>
   );
 }
 
+/* ===== Robust Impact badge (now recognizes many encodings) ===== */
 function ImpactBadge({ value, dark }) {
   const v = (value || '').toString().toLowerCase();
-  let label = value || '—';
-  let cls;
-  if (['critical','high','severe','p1','p0'].includes(v)) {
+
+  // default: visible neutral chip (no more translucent '—')
+  let label = value ? value.toUpperCase() : 'UNKNOWN';
+  let cls = dark ? 'bg-white text-gray-900' : 'bg-slate-300 text-slate-900';
+
+  if (v === 'critical') {
     cls = 'bg-rose-600 text-white';
-    label = label.toUpperCase();
-  } else if (['medium','moderate','p2'].includes(v)) {
+    label = 'CRITICAL';
+  } else if (v === 'high') {
+    cls = 'bg-red-500 text-white';
+    label = 'HIGH';
+  } else if (v === 'medium') {
     cls = 'bg-amber-500 text-slate-900';
-  } else if (['low','minor','p3','p4'].includes(v)) {
+    label = 'MEDIUM';
+  } else if (v === 'low') {
     cls = 'bg-emerald-600 text-white';
-  } else {
-    cls = dark ? 'bg-white/10 text-white' : 'bg-slate-200 text-slate-900';
+    label = 'LOW';
   }
-  return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${cls}`}>{label}</span>;
+
+  return (
+    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${cls}`}>
+      {label}
+    </span>
+  );
 }
