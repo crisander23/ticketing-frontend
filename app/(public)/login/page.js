@@ -37,7 +37,10 @@ export default function LoginPage() {
       login(u);
       router.replace(routeForUser(u));
     } catch (e) {
-      setError(e?.message || 'Login failed. Please check your credentials and try again.');
+      // --- MODIFIED ---
+      // Always show a user-friendly message instead of the raw API error (e.message)
+      setError('Login failed. Please check your credentials and try again.');
+      // --- END MODIFICATION ---
     } finally {
       setLoading(false);
     }

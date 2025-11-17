@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState, useCallback } from 'react';
 import { redirect, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/useAuthStore';
 import { apiFetch } from '@/lib/api';
+import Sidebar from '@/components/Sidebar'; // <-- 1. Import Sidebar
+import { Menu } from 'lucide-react'; // <-- 2. Import Menu icon
 
 export default function CreateTicketPage() {
   const { user } = useAuthStore();
@@ -13,50 +15,61 @@ export default function CreateTicketPage() {
   if (!user) redirect('/login');
   if (user.user_type !== 'client') redirect('/login');
 
-  /* ================= Theme (ocean/light) ================= */
-  const [theme, setTheme] = useState('ocean');
+  /* ================= Theme (dark/light) ================= */
+  const [theme, setTheme] = useState('dark'); 
   useEffect(() => {
-    const saved = typeof window !== 'undefined' ? localStorage.getItem('ticketing_theme') : null;
-    const t = saved || 'ocean';
+    const saved = typeof window !== 'undefined' ? localStorage.getItem('nea_theme') : null;
+    const t = saved || 'dark'; 
     setTheme(t);
     document.documentElement.setAttribute('data-theme', t);
   }, []);
-  const toggleTheme = () => {
-    setTheme(prev => {
-      const next = prev === 'ocean' ? 'light' : 'ocean';
-      localStorage.setItem('ticketing_theme', next);
-      document.documentElement.setAttribute('data-theme', next);
-      return next;
-    });
-  };
+  
+  // --- 1. ADDED THIS BLOCK TO SYNC THEME ---
+  useEffect(() => {
+    localStorage.setItem('nea_theme', theme);
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
+  // --- END ADDITION ---
 
+  // --- 4. Added Sidebar state ---
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isDesktopCollapsed, setIsDesktopCollapsed] = useState(false);
+  
+  // 5. Added onRefresh prop for Sidebar (no-op on this page)
+  const refreshAll = useCallback(() => {}, []);
+
+
+  /* --- 6. Updated all theme styles from 'ocean' to 'dark' --- */
   const pageBg =
-    theme === 'ocean'
+    theme === 'dark'
       ? 'bg-gradient-to-br from-slate-900 via-blue-900 to-blue-700'
       : 'bg-slate-100';
 
-  const headerCls =
-    theme === 'ocean'
-      ? 'fixed top-0 left-0 right-0 z-50 border-b border-white/10 bg-white/5 backdrop-blur-md'
-      : 'fixed top-0 left-0 right-0 z-50 border-b border-slate-200 bg-white/90 backdrop-blur';
+  // This class is for the new mobile header
+  const mobileHeaderCls =
+    theme === 'dark'
+      ? 'sticky top-0 z-30 flex h-16 items-center justify-between px-4 md:hidden bg-slate-900/70 border-b border-white/10 backdrop-blur'
+      : 'sticky top-0 z-30 flex h-16 items-center justify-between px-4 md:hidden bg-white/90 border-b border-slate-200 backdrop-blur';
 
-  const textMain = theme === 'ocean' ? 'text-white' : 'text-slate-900';
-  const textSub  = theme === 'ocean' ? 'text-white/80' : 'text-slate-600';
+  const textMain = theme === 'dark' ? 'text-white' : 'text-slate-900';
+  const textSub  = theme === 'dark' ? 'text-white/80' : 'text-slate-600';
 
-  const inputWrap = theme === 'ocean'
+  const inputWrap = theme === 'dark'
     ? 'rounded-xl border border-white/20 bg-white/10 text-white placeholder-white/70 focus:ring-2 focus:ring-blue-300'
     : 'rounded-xl border border-slate-300 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-slate-300';
 
   const selectWrap = inputWrap;
   const areaWrap   = inputWrap;
 
-  const buttonGhost = theme === 'ocean'
+  const buttonGhost = theme === 'dark'
     ? 'rounded-lg border border-white/20 bg-white/10 hover:bg-white/15 text-white px-3 py-2 text-sm'
     : 'rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-900 px-3 py-2 text-sm';
 
-  const buttonSolid = theme === 'ocean'
+  const buttonSolid = theme === 'dark'
     ? 'rounded-lg bg-white text-gray-900 hover:bg-gray-100 px-3 py-2 text-sm'
     : 'rounded-lg bg-slate-900 text-white hover:bg-slate-800 px-3 py-2 text-sm';
+  /* --- End Theme Updates --- */
+
 
   /* ================= Form State ================= */
   const [form, setForm] = useState({
@@ -87,9 +100,6 @@ export default function CreateTicketPage() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState({ kind: '', text: '' });
 
-  // Decide where to POST uploads:
-  // - If you proxy through Next API: leave UPLOAD_BASE empty and we’ll use `/api/...`
-  // - If you hit backend directly: set NEXT_PUBLIC_API_BASE (e.g. http://localhost:7230)
   const UPLOAD_BASE = process.env.NEXT_PUBLIC_API_BASE?.trim() || '';
 
   const validate = () => {
@@ -134,9 +144,6 @@ export default function CreateTicketPage() {
         fd.append('user_id', String(user.user_id));
         files.forEach(f => fd.append('attachments', f));
 
-        // Use the right base:
-        // - If UPLOAD_BASE is set -> `${UPLOAD_BASE}/tickets/${id}/upload`
-        // - Else use Next proxy -> `/api/tickets/${id}/upload`
         const uploadUrl = UPLOAD_BASE
           ? `${UPLOAD_BASE.replace(/\/$/, '')}/tickets/${newId}/upload`
           : `/api/tickets/${newId}/upload`;
@@ -144,8 +151,6 @@ export default function CreateTicketPage() {
         const upload = await fetch(uploadUrl, {
           method: 'POST',
           body: fd,
-          // If your backend needs cookies/session:
-          // credentials: 'include',
         });
         if (!upload.ok) {
           const j = await upload.json().catch(() => ({}));
@@ -166,183 +171,195 @@ export default function CreateTicketPage() {
   /* ================= Render ================= */
   return (
     <div className={`min-h-screen w-full ${pageBg}`}>
-      {/* Sticky translucent header */}
-      <header className={headerCls}>
-        <div className="mx-auto w-full max-w-[1400px] px-4 sm:px-6 h-16 flex items-center justify-between">
-          <div className={textMain + ' min-w-0'}>
-            <h1 className="truncate text-lg sm:text-xl font-semibold">Create Ticket</h1>
-            <p className={textSub + ' text-xs sm:text-sm'}>
-              Logged in as <span className="font-medium">{user?.email}</span>
+      
+      {/* --- 7. Added Sidebar --- */}
+      <Sidebar 
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        isDesktopCollapsed={isDesktopCollapsed}
+        onToggleDesktopCollapse={() => setIsDesktopCollapsed(prev => !prev)}
+        theme={theme}
+        setTheme={setTheme}
+        onRefresh={refreshAll} // Pass the no-op refresh
+        userType="client"
+      />
+
+      {/* --- 8. Added Content Wrapper --- */}
+      <div className={`flex flex-col min-h-screen transition-all duration-300 ease-in-out ${
+        isDesktopCollapsed ? 'md:pl-20' : 'md:pl-64'
+      }`}>
+
+        {/* --- 9. Replaced old <header> with Mobile-only Top Bar --- */}
+        <header className={mobileHeaderCls}>
+          <h1 className={`truncate text-lg sm:text-xl font-semibold ${textMain}`}>Create Ticket</h1>
+          <button onClick={() => setSidebarOpen(true)} className={`p-2 ${buttonGhost}`}>
+            <Menu className="h-5 w-5" />
+          </button>
+        </header>
+
+        {/* --- 10. Updated <main> padding --- */}
+        <main className="w-full max-w-[1000px] mx-auto px-4 sm:px-6 pt-4 md:pt-8 pb-10">
+
+          {/* Page Title (Desktop-only) */}
+          <div className="hidden md:block mb-4">
+            <h1 className={`text-3xl font-semibold ${textMain}`}>Create New Ticket</h1>
+            <p className={`text-sm ${textSub}`}>
+              Please provide as much detail as possible. Attach up to 5 screenshots or files if needed.
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <button className={buttonGhost} onClick={toggleTheme}>
-              {theme === 'ocean' ? '☀️ Light' : '🌊 Ocean'}
-            </button>
-            <button className={buttonSolid} onClick={goBack}>
-              Back
-            </button>
-          </div>
-        </div>
-      </header>
 
-      {/* Canvas */}
-      <main className="mx-auto w-full max-w-[1000px] px-4 sm:px-6 pt-20 pb-10">
-        <p className={`${textSub} mb-4`}>
-          Please provide as much detail as possible. Attach up to 5 screenshots or files if needed.
-        </p>
+          {/* Message banner (Updated theme logic) */}
+          {msg.text && (
+            <div
+              className={`mb-4 rounded-lg px-4 py-3 text-sm ${
+                msg.kind === 'error'
+                  ? theme === 'dark'
+                    ? 'border border-red-400/30 bg-red-900/25 text-red-100'
+                    : 'border border-rose-200 bg-rose-50 text-rose-700'
+                  : msg.kind === 'success'
+                  ? theme === 'dark'
+                    ? 'border border-emerald-400/30 bg-emerald-900/25 text-emerald-100'
+                    : 'border border-emerald-200 bg-emerald-50 text-emerald-700'
+                  : theme === 'dark'
+                  ? 'border border-white/20 bg-white/10 text-white'
+                  : 'border border-slate-200 bg-white text-slate-900'
+              }`}
+            >
+              {msg.text}
+            </div>
+          )}
 
-        {/* Message banner */}
-        {msg.text && (
+          {/* Form card (Updated theme logic) */}
           <div
-            className={`mb-4 rounded-lg px-4 py-3 text-sm ${
-              msg.kind === 'error'
-                ? theme === 'ocean'
-                  ? 'border border-red-400/30 bg-red-900/25 text-red-100'
-                  : 'border border-rose-200 bg-rose-50 text-rose-700'
-                : msg.kind === 'success'
-                ? theme === 'ocean'
-                  ? 'border border-emerald-400/30 bg-emerald-900/25 text-emerald-100'
-                  : 'border border-emerald-200 bg-emerald-50 text-emerald-700'
-                : theme === 'ocean'
-                ? 'border border-white/20 bg-white/10 text-white'
+            className={`rounded-2xl p-5 sm:p-6 ${
+              theme === 'dark'
+                ? 'border border-white/15 bg-white/5 text-white'
                 : 'border border-slate-200 bg-white text-slate-900'
             }`}
           >
-            {msg.text}
-          </div>
-        )}
-
-        {/* Form card */}
-        <div
-          className={`rounded-2xl p-5 sm:p-6 ${
-            theme === 'ocean'
-              ? 'border border-white/15 bg-white/5 text-white'
-              : 'border border-slate-200 bg-white text-slate-900'
-          }`}
-        >
-          <div className="space-y-5">
-            {/* Title */}
-            <div>
-              <label className="block text-sm mb-1 opacity-90">
-                Subject / Title of Request <span className="text-red-400">*</span>
-              </label>
-              <input
-                className={`w-full px-3 py-2 ${inputWrap}`}
-                placeholder="e.g., Cannot access shared drive"
-                value={form.title}
-                onChange={(e) => setField('title', e.target.value)}
-              />
-            </div>
-
-            {/* Category */}
-            <div>
-              <label className="block text-sm mb-1 opacity-90">
-                Category <span className="text-red-400">*</span>
-              </label>
-              <select
-                className={`w-full px-3 py-2 ${selectWrap}`}
-                value={form.category}
-                onChange={(e) => setField('category', e.target.value)}
-              >
-                <option className="text-black" value="">Select a category…</option>
-                <option className="text-black" value="System Issue">System Issue</option>
-                <option className="text-black" value="Software Exception Report">Software Exception Report</option>
-                <option className="text-black" value="Access Request / Issue">Access Request / Issue</option>
-                <option className="text-black" value="New Feature Request">New Feature Request</option>
-                <option className="text-black" value="Network Issue">Network Issue</option>
-                <option className="text-black" value="Hardware Issue">Hardware Issue</option>
-                <option className="text-black" value="Business Process / Policy Issue">Business Process / Policy Issue</option>
-              </select>
-            </div>
-
-            {/* Requested By Date (feature only) */}
-            {isFeature && (
+            <div className="space-y-5">
+              {/* Title */}
               <div>
-                <label className="block text-sm mb-1 opacity-90">New Feature — Requested By Date</label>
+                <label className="block text-sm mb-1 opacity-90">
+                  Subject / Title of Request <span className="text-red-400">*</span>
+                </label>
                 <input
-                  type="date"
                   className={`w-full px-3 py-2 ${inputWrap}`}
-                  value={form.requested_by_date}
-                  onChange={(e) => setField('requested_by_date', e.target.value)}
+                  placeholder="e.g., Cannot access shared drive"
+                  value={form.title}
+                  onChange={(e) => setField('title', e.target.value)}
                 />
               </div>
-            )}
 
-            {/* Impact */}
-            <div>
-              <label className="block text-sm mb-1 opacity-90">
-                Impact of Issue <span className="text-red-400">*</span>
-              </label>
-              <select
-                className={`w-full px-3 py-2 ${selectWrap}`}
-                value={form.impact}
-                onChange={(e) => setField('impact', e.target.value)}
-              >
-                <option className="text-black" value="">Select the impact level…</option>
-                <option className="text-black" value="Critical">Critical (System Down) — Complete outage</option>
-                <option className="text-black" value="High">High (Key Function Affected)</option>
-                <option className="text-black" value="Medium">Medium (Degraded Service)</option>
-                <option className="text-black" value="Minor">Minor (Irregularities)</option>
-              </select>
-            </div>
+              {/* Category */}
+              <div>
+                <label className="block text-sm mb-1 opacity-90">
+                  Category <span className="text-red-400">*</span>
+                </label>
+                <select
+                  className={`w-full px-3 py-2 ${selectWrap}`}
+                  value={form.category}
+                  onChange={(e) => setField('category', e.target.value)}
+                >
+                  <option className="text-black" value="">Select a category…</option>
+                  <option className="text-black" value="System Issue">System Issue</option>
+                  <option className="text-black" value="Software Exception Report">Software Exception Report</option>
+                  <option className="text-black" value="Access Request / Issue">Access Request / Issue</option>
+                  <option className="text-black" value="New Feature Request">New Feature Request</option>
+                  <option className="text-black" value="Network Issue">Network Issue</option>
+                  <option className="text-black" value="Hardware Issue">Hardware Issue</option>
+                  <option className="text-black" value="Business Process / Policy Issue">Business Process / Policy Issue</option>
+                </select>
+              </div>
 
-            {/* Description */}
-            <div>
-              <label className="block text-sm mb-1 opacity-90">
-                Description of Issue <span className="text-red-400">*</span>
-              </label>
-              <textarea
-                className={`min-h-[140px] w-full px-3 py-2 ${areaWrap}`}
-                placeholder="Please provide as much detail as possible…"
-                value={form.description}
-                onChange={(e) => setField('description', e.target.value)}
-              />
-            </div>
-
-            {/* Attachments */}
-            <div>
-              <label className="block text-sm mb-1 opacity-90">Supporting Files / Screenshots (Up to 5)</label>
-              <input
-                type="file"
-                multiple
-                onChange={onFilesChange}
-                className={
-                  theme === 'ocean'
-                    ? 'block w-full text-sm file:mr-4 file:rounded-md file:border-0 file:px-4 file:py-2 file:bg-white/10 file:text-white hover:file:bg-white/15'
-                    : 'block w-full text-sm file:mr-4 file:rounded-md file:border-0 file:px-4 file:py-2 file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100'
-                }
-                accept="image/*,.pdf,.doc,.docx,.xlsx,.csv,.txt"
-              />
-              {fileError && (
-                <div className={`mt-2 text-sm ${theme === 'ocean' ? 'text-red-200' : 'text-rose-600'}`}>
-                  {fileError}
+              {/* Requested By Date (feature only) */}
+              {isFeature && (
+                <div>
+                  <label className="block text-sm mb-1 opacity-90">New Feature — Requested By Date</label>
+                  <input
+                    type="date"
+                    className={`w-full px-3 py-2 ${inputWrap}`}
+                    value={form.requested_by_date}
+                    onChange={(e) => setField('requested_by_date', e.target.value)}
+                  />
                 </div>
               )}
-              {files.length > 0 && (
-                <ul className={`mt-2 text-sm ${theme === 'ocean' ? 'text-white/90' : 'text-slate-700'}`}>
-                  {files.map((f, i) => <li key={i}>• {f.name}</li>)}
-                </ul>
-              )}
-            </div>
 
-            {/* Actions */}
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button type="button" onClick={() => router.back()} className={buttonGhost}>
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={create}
-                className={`${buttonSolid} disabled:opacity-60`}
-              >
-                {busy ? 'Submitting…' : 'Submit Ticket'}
-              </button>
+              {/* Impact */}
+              <div>
+                <label className="block text-sm mb-1 opacity-90">
+                  Impact of Issue <span className="text-red-400">*</span>
+                </label>
+                <select
+                  className={`w-full px-3 py-2 ${selectWrap}`}
+                  value={form.impact}
+                  onChange={(e) => setField('impact', e.target.value)}
+                >
+                  <option className="text-black" value="">Select the impact level…</option>
+                  <option className="text-black" value="Critical">Critical (System Down) — Complete outage</option>
+                  <option className="text-black" value="High">High (Key Function Affected)</option>
+                  <option className="text-black" value="Medium">Medium (Degraded Service)</option>
+                  <option className="text-black" value="Minor">Minor (Irregularities)</option>
+                </select>
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-sm mb-1 opacity-90">
+                  Description of Issue <span className="text-red-400">*</span>
+                </label>
+                <textarea
+                  className={`min-h-[140px] w-full px-3 py-2 ${areaWrap}`}
+                  placeholder="Please provide as much detail as possible…"
+                  value={form.description}
+                  onChange={(e) => setField('description', e.target.value)}
+                />
+              </div>
+
+              {/* Attachments (Updated theme logic) */}
+              <div>
+                <label className="block text-sm mb-1 opacity-90">Supporting Files / Screenshots (Up to 5)</label>
+                <input
+                  type="file"
+                  multiple
+                  onChange={onFilesChange}
+                  className={
+                    theme === 'dark'
+                      ? 'block w-full text-sm file:mr-4 file:rounded-md file:border-0 file:px-4 file:py-2 file:bg-white/10 file:text-white hover:file:bg-white/15'
+                      : 'block w-full text-sm file:mr-4 file:rounded-md file:border-0 file:px-4 file:py-2 file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100'
+                  }
+                  accept="image/*,.pdf,.doc,.docx,.xlsx,.csv,.txt"
+                />
+                {fileError && (
+                  <div className={`mt-2 text-sm ${theme === 'dark' ? 'text-red-200' : 'text-rose-600'}`}>
+                    {fileError}
+                  </div>
+                )}
+                {files.length > 0 && (
+                  <ul className={`mt-2 text-sm ${theme === 'dark' ? 'text-white/90' : 'text-slate-700'}`}>
+                    {files.map((f, i) => <li key={i}>• {f.name}</li>)}
+                  </ul>
+                )}
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button type="button" onClick={goBack} className={buttonGhost}>
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={create}
+                  className={`${buttonSolid} disabled:opacity-60`}
+                >
+                  {busy ? 'Submitting…' : 'Submit Ticket'}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }
