@@ -60,6 +60,7 @@ export default function ClientDashboardPage() {
     if (!tickets) return [];
     return tickets
       .filter(t => ['resolved', 'closed'].includes((t.status || '').toLowerCase()))
+      // Sort by resolved_at, but fallback to updated_at if it's null
       .sort((a, b) => new Date(b.resolved_at || b.updated_at) - new Date(a.resolved_at || a.updated_at)) // Most recent first
       .slice(0, 5); // Get top 5
   }, [tickets]);
@@ -73,7 +74,7 @@ export default function ClientDashboardPage() {
   const pageBg =
     theme === 'dark'
       ? 'bg-gradient-to-br from-slate-900 via-blue-900 to-blue-700 text-white'
-      : 'bg-slate-50 text-slate-900';
+      : 'bg-slate-100'; // <-- FIXED: Removed 'text-slate-900'
 
   const textMain = theme === 'dark' ? 'text-white' : 'text-slate-900';
   const textSub  = theme === 'dark' ? 'text-white/80' : 'text-slate-600';
@@ -86,7 +87,7 @@ export default function ClientDashboardPage() {
   // --- 4. Added cardBg style ---
   const cardBg = theme === 'dark'
     ? 'rounded-xl border border-white/15 bg-white/5'
-    : 'rounded-xl border border-slate-200 bg-white';
+    : 'rounded-xl border border-slate-200 bg-white'; 
   const cardTitle = theme === 'dark' ? 'text-white' : 'text-slate-900';
   /* --- End Added style --- */
 
@@ -175,7 +176,8 @@ export default function ClientDashboardPage() {
           <section>
             <h2 className={`text-xl font-semibold ${cardTitle} mb-3`}>My Ticket Analytics</h2>
             {ticketsLoading ? (
-              <div className={`rounded-xl p-6 text-center ${subTitle} ${cardBg}`}>
+              // --- FIXED: Replaced subTitle with textSub ---
+              <div className={`rounded-xl p-6 text-center ${textSub} ${cardBg}`}>
                 Loading charts...
               </div>
             ) : ticketsError ? (
@@ -192,14 +194,14 @@ export default function ClientDashboardPage() {
               <TicketCharts 
                 tickets={tickets || []} 
                 theme={theme}
-                // Only show charts relevant to a client
+                // --- FIXED: Show only Status and Impact ---
                 show={{
                   status: true,
                   impact: true,
-                  category: true,
-                  time: true,
-                  agent: false, // Hide admin-only
-                  department: false // Hide admin-only
+                  category: false,
+                  time: false,
+                  agent: false,
+                  department: false
                 }}
               />
             )}

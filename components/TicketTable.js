@@ -4,6 +4,54 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
+// --- 1. MOVED deriveImpact FUNCTION HERE ---
+// Derive/normalize Impact from multiple fields/encodings
+const deriveImpact = (row) => {
+  // Try common field names
+  let raw =
+    row.impact ??
+    row.impact_level ??
+    row.priority ??
+    row.severity ??
+    row.p ??
+    row.Impact ?? // if backend sends PascalCase
+    '';
+
+  // Some backends send numbers (0..4) or strings like "1"
+  if (raw === 0 || raw === 1 || raw === 2 || raw === 3 || raw === 4) raw = String(raw);
+  if (typeof raw !== 'string') raw = String(raw ?? '');
+
+  const v = raw.trim().toLowerCase();
+
+  // Map various aliases/numerics to standard buckets
+  if (!v) return ''; // truly unknown
+
+  // Numeric or p-levels
+  if (['0', 'p0', 'p-0'].includes(v)) return 'critical';
+  if (['1', 'p1', 'p-1'].includes(v)) return 'high';
+  if (['2', 'p2', 'p-2'].includes(v)) return 'medium';
+  if (['3', '4', 'p3', 'p4', 'p-3', 'p-4'].includes(v)) return 'low';
+
+  // Wordy aliases
+  if (['critical', 'severe', 'blocker', 'urgent', 'system down'].includes(v)) return 'critical';
+  if (['high', 'major', 'key', 'important'].includes(v)) return 'high';
+  if (['medium', 'moderate', 'normal'].includes(v)) return 'medium';
+  if (['low', 'minor', 'trivial'].includes(v)) return 'low';
+
+  // If they put full sentences, attempt quick keyword match
+  if (v.includes('critical')) return 'critical';
+  if (v.includes('high')) return 'high';
+  if (v.includes('medium')) return 'medium';
+  if (v.includes('low')) return 'low';
+  if (v.includes('p0')) return 'critical';
+  if (v.includes('p1')) return 'high';
+  if (v.includes('p2')) return 'medium';
+  if (v.includes('p3') || v.includes('p4')) return 'low';
+
+  return ''; // unknown
+};
+
+
 export default function TicketTable({
   rows = [],
   role = 'client',
@@ -20,15 +68,10 @@ export default function TicketTable({
   const router = useRouter(); 
   const isPrivileged = role === 'admin' || role === 'agent';
 
-  // --- 1. STATE FOR FILTERS ---
+  // --- 1. STATE FOR FILTERS (Simplified) ---
   const [filters, setFilters] = useState({
-    id: '',
-    title: '',
-    client: '',
-    agent: '',
     impact: '',
     status: '',
-    created: '',
   });
   
   const handleFilterChange = (key, value) => {
@@ -36,27 +79,19 @@ export default function TicketTable({
     setFilters(prev => ({ ...prev, [key]: value }));
   };
 
-  // --- 2. FILTER LOGIC ---
+  // --- 2. FILTER LOGIC (Simplified) ---
   const filteredRows = useMemo(() => {
     return rows.filter(t => {
-      const clientName = `${t.client_first_name || ''} ${t.client_last_name || ''}`.trim();
-      const agentName = (t.agent_first_name ? `${t.agent_first_name} ${t.agent_last_name}`.trim() : (t.agent_name || 'Unassigned')).toLowerCase();
-      const created = (t.created_at ? new Date(t.created_at).toLocaleString() : '').toLowerCase();
-      const impactNorm = deriveImpact(t);
+      const impactNorm = deriveImpact(t); // <-- This will now work
       const trueStatus = (t.status || 'open').toLowerCase();
 
       // Check all filters
-      if (filters.id && !String(t.ticket_id).includes(filters.id)) return false;
-      if (filters.title && !String(t.title || '').toLowerCase().includes(filters.title.toLowerCase())) return false;
-      if (isPrivileged && filters.client && !clientName.toLowerCase().includes(filters.client.toLowerCase())) return false;
-      if (filters.agent && (filters.agent === 'unassigned' ? agentName !== 'unassigned' : !agentName.includes(filters.agent.toLowerCase()))) return false;
       if (filters.impact && impactNorm !== filters.impact) return false;
       if (filters.status && trueStatus !== filters.status) return false;
-      if (filters.created && !created.includes(filters.created.toLowerCase())) return false;
       
       return true;
     });
-  }, [rows, filters, isPrivileged]);
+  }, [rows, filters]);
 
 
   // pagination
@@ -133,7 +168,8 @@ export default function TicketTable({
     th: 'px-4 py-3 text-left text-xs uppercase font-semibold',
     // --- 4. NEW STYLE FOR FILTER ROW ---
     filterCell: `p-2 ${isDark ? 'border-b border-white/10' : 'border-b border-slate-200'}`,
-    filterInput: `w-full rounded border px-2 py-1 text-xs ${
+    // --- 5. RENAMED 'filterInput' to 'filterSelect' ---
+    filterSelect: `w-full rounded border px-2 py-1 text-xs ${
       isDark ? 'border-white/15 bg-transparent text-white placeholder-white/60' : 'border-slate-300 bg-white text-slate-900 placeholder-slate-400'
     } focus:outline-none focus:ring-1 focus:ring-blue-500`,
     
@@ -155,51 +191,7 @@ export default function TicketTable({
     footer: `flex items-center justify-between p-3 border-t ${isDark ? 'border-white/10 text-white/80' : 'border-slate-200 text-slate-600'} text-xs`,
   };
 
-  // Derive/normalize Impact from multiple fields/encodings
-  const deriveImpact = (row) => {
-    // Try common field names
-    let raw =
-      row.impact ??
-      row.impact_level ??
-      row.priority ??
-      row.severity ??
-      row.p ??
-      row.Impact ?? // if backend sends PascalCase
-      '';
-
-    // Some backends send numbers (0..4) or strings like "1"
-    if (raw === 0 || raw === 1 || raw === 2 || raw === 3 || raw === 4) raw = String(raw);
-    if (typeof raw !== 'string') raw = String(raw ?? '');
-
-    const v = raw.trim().toLowerCase();
-
-    // Map various aliases/numerics to standard buckets
-    if (!v) return ''; // truly unknown
-
-    // Numeric or p-levels
-    if (['0', 'p0', 'p-0'].includes(v)) return 'critical';
-    if (['1', 'p1', 'p-1'].includes(v)) return 'high';
-    if (['2', 'p2', 'p-2'].includes(v)) return 'medium';
-    if (['3', '4', 'p3', 'p4', 'p-3', 'p-4'].includes(v)) return 'low';
-
-    // Wordy aliases
-    if (['critical', 'severe', 'blocker', 'urgent', 'system down'].includes(v)) return 'critical';
-    if (['high', 'major', 'key', 'important'].includes(v)) return 'high';
-    if (['medium', 'moderate', 'normal'].includes(v)) return 'medium';
-    if (['low', 'minor', 'trivial'].includes(v)) return 'low';
-
-    // If they put full sentences, attempt quick keyword match
-    if (v.includes('critical')) return 'critical';
-    if (v.includes('high')) return 'high';
-    if (v.includes('medium')) return 'medium';
-    if (v.includes('low')) return 'low';
-    if (v.includes('p0')) return 'critical';
-    if (v.includes('p1')) return 'high';
-    if (v.includes('p2')) return 'medium';
-    if (v.includes('p3') || v.includes('p4')) return 'low';
-
-    return ''; // unknown
-  };
+  // --- 8. REMOVED deriveImpact from here ---
 
   // SAFE colgroup (no whitespace text nodes)
   const colDefs = useMemo(() => ([
@@ -213,25 +205,15 @@ export default function TicketTable({
     isPrivileged ? <col key="action" className="w-[120px]" /> : null,
   ].filter(Boolean)), [isPrivileged, showImpact]);
 
-  // --- 5. NEW FILTER INPUT COMPONENT ---
-  const FilterInput = ({ filterKey, placeholder }) => (
-    <input
-      type="text"
-      placeholder={placeholder || 'Filter...'}
-      value={filters[filterKey]}
-      onChange={(e) => handleFilterChange(filterKey, e.target.value)}
-      onClick={(e) => e.stopPropagation()} // Prevent row click
-      className={tone.filterInput}
-    />
-  );
+  // --- 6. REMOVED FilterInput COMPONENT ---
   
-  // --- 6. NEW FILTER SELECT COMPONENT ---
+  // --- 7. NEW FILTER SELECT COMPONENT ---
   const FilterSelect = ({ filterKey, options, placeholder }) => (
     <select
       value={filters[filterKey]}
       onChange={(e) => handleFilterChange(filterKey, e.target.value)}
       onClick={(e) => e.stopPropagation()} // Prevent row click
-      className={tone.filterInput}
+      className={tone.filterSelect}
     >
       <option value="">{placeholder || 'All'}</option>
       {options.map(opt => (
@@ -258,25 +240,13 @@ export default function TicketTable({
               {isPrivileged && <th className={tone.th}>Action</th>}
             </tr>
             
-            {/* --- 7. NEW FILTER ROW --- */}
+            {/* --- 8. SIMPLIFIED FILTER ROW --- */}
             <tr>
-              <th className={tone.filterCell}><FilterInput filterKey="id" placeholder="ID..." /></th>
-              <th className={tone.filterCell}><FilterInput filterKey="title" placeholder="Title..." /></th>
-              {isPrivileged && <th className={`${tone.filterCell} hidden md:table-cell`}><FilterInput filterKey="client" placeholder="Client..." /></th>}
-              <th className={tone.filterCell}>
-                {isPrivileged ? (
-                  <FilterSelect 
-                    filterKey="agent" 
-                    placeholder="All Agents"
-                    options={[
-                      { value: 'unassigned', label: 'Unassigned' },
-                      ...agentOptions.map(a => ({ value: a.label.toLowerCase(), label: a.label }))
-                    ]}
-                  />
-                ) : (
-                  <FilterInput filterKey="agent" placeholder="Agent..." />
-                )}
-              </th>
+              <th className={tone.filterCell}></th> {/* ID */}
+              <th className={tone.filterCell}></th> {/* Title */}
+              {isPrivileged && <th className={`${tone.filterCell} hidden md:table-cell`}></th>} {/* Client */}
+              <th className={tone.filterCell}></th> {/* Agent */}
+              
               {showImpact && (
                 <th className={tone.filterCell}>
                   <FilterSelect 
@@ -291,6 +261,7 @@ export default function TicketTable({
                   />
                 </th>
               )}
+              
               <th className={tone.filterCell}>
                 <FilterSelect 
                   filterKey="status" 
@@ -303,8 +274,9 @@ export default function TicketTable({
                   ]}
                 />
               </th>
-              <th className={`${tone.filterCell} hidden sm:table-cell`}><FilterInput filterKey="created" placeholder="Date..." /></th>
-              {isPrivileged && <th className={tone.filterCell}></th>}
+              
+              <th className={`${tone.filterCell} hidden sm:table-cell`}></th> {/* Created */}
+              {isPrivileged && <th className={tone.filterCell}></th>} {/* Action */}
             </tr>
             {/* --- END FILTER ROW --- */}
             
