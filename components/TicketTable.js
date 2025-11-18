@@ -4,8 +4,7 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
-// --- 1. MOVED deriveImpact FUNCTION HERE ---
-// Derive/normalize Impact from multiple fields/encodings
+// --- deriveImpact function defined at the top ---
 const deriveImpact = (row) => {
   // Try common field names
   let raw =
@@ -68,36 +67,19 @@ export default function TicketTable({
   const router = useRouter(); 
   const isPrivileged = role === 'admin' || role === 'agent';
 
-  // --- 1. STATE FOR FILTERS (Simplified) ---
-  const [filters, setFilters] = useState({
-    impact: '',
-    status: '',
-  });
+  // --- 1. REMOVED FILTER STATE ---
+  // const [filters, setFilters] = useState(...);
   
-  const handleFilterChange = (key, value) => {
-    setPage(1); // Reset to first page on any filter change
-    setFilters(prev => ({ ...prev, [key]: value }));
-  };
-
-  // --- 2. FILTER LOGIC (Simplified) ---
+  // --- 2. REVERTED FILTEREDROWS TO USE 'rows' ---
   const filteredRows = useMemo(() => {
-    return rows.filter(t => {
-      const impactNorm = deriveImpact(t); // <-- This will now work
-      const trueStatus = (t.status || 'open').toLowerCase();
-
-      // Check all filters
-      if (filters.impact && impactNorm !== filters.impact) return false;
-      if (filters.status && trueStatus !== filters.status) return false;
-      
-      return true;
-    });
-  }, [rows, filters]);
+    return rows;
+  }, [rows]);
 
 
   // pagination
   const [page, setPage] = useState(1);
   // --- 3. PAGINATION BASED ON FILTERED ROWS ---
-  const total = filteredRows.length;
+  const total = filteredRows.length; // This now uses the memo above
   const totalPages = Math.max(1, Math.ceil(total / perPage));
   const pageRows = useMemo(() => {
     const start = (page - 1) * perPage;
@@ -166,12 +148,10 @@ export default function TicketTable({
     tableWrap: `overflow-hidden rounded-xl border ${isDark ? 'border-white/15 bg-white/5' : 'border-slate-200 bg-white'}`,
     head: isDark ? 'bg-white/10 text-white/90' : 'bg-slate-50 text-slate-700',
     th: 'px-4 py-3 text-left text-xs uppercase font-semibold',
-    // --- 4. NEW STYLE FOR FILTER ROW ---
-    filterCell: `p-2 ${isDark ? 'border-b border-white/10' : 'border-b border-slate-200'}`,
-    // --- 5. RENAMED 'filterInput' to 'filterSelect' ---
-    filterSelect: `w-full rounded border px-2 py-1 text-xs ${
-      isDark ? 'border-white/15 bg-transparent text-white placeholder-white/60' : 'border-slate-300 bg-white text-slate-900 placeholder-slate-400'
-    } focus:outline-none focus:ring-1 focus:ring-blue-500`,
+    
+    // --- 4. REMOVED FILTER STYLES ---
+    // filterCell: ...,
+    // filterSelect: ...,
     
     rowHover: isDark ? 'hover:bg-white/10' : 'hover:bg-slate-50',
     td: `px-4 py-3 ${isDark ? 'text-white/90' : 'text-slate-800'}`,
@@ -191,8 +171,6 @@ export default function TicketTable({
     footer: `flex items-center justify-between p-3 border-t ${isDark ? 'border-white/10 text-white/80' : 'border-slate-200 text-slate-600'} text-xs`,
   };
 
-  // --- 8. REMOVED deriveImpact from here ---
-
   // SAFE colgroup (no whitespace text nodes)
   const colDefs = useMemo(() => ([
     <col key="id" className="w-[90px]" />,
@@ -205,23 +183,8 @@ export default function TicketTable({
     isPrivileged ? <col key="action" className="w-[120px]" /> : null,
   ].filter(Boolean)), [isPrivileged, showImpact]);
 
-  // --- 6. REMOVED FilterInput COMPONENT ---
+  // --- 6. REMOVED FilterInput/FilterSelect COMPONENTS ---
   
-  // --- 7. NEW FILTER SELECT COMPONENT ---
-  const FilterSelect = ({ filterKey, options, placeholder }) => (
-    <select
-      value={filters[filterKey]}
-      onChange={(e) => handleFilterChange(filterKey, e.target.value)}
-      onClick={(e) => e.stopPropagation()} // Prevent row click
-      className={tone.filterSelect}
-    >
-      <option value="">{placeholder || 'All'}</option>
-      {options.map(opt => (
-        <option key={opt.value} value={opt.value} className="text-black">{opt.label}</option>
-      ))}
-    </select>
-  );
-
   return (
     <div className={tone.tableWrap}>
       <div className="overflow-x-auto">
@@ -240,45 +203,7 @@ export default function TicketTable({
               {isPrivileged && <th className={tone.th}>Action</th>}
             </tr>
             
-            {/* --- 8. SIMPLIFIED FILTER ROW --- */}
-            <tr>
-              <th className={tone.filterCell}></th> {/* ID */}
-              <th className={tone.filterCell}></th> {/* Title */}
-              {isPrivileged && <th className={`${tone.filterCell} hidden md:table-cell`}></th>} {/* Client */}
-              <th className={tone.filterCell}></th> {/* Agent */}
-              
-              {showImpact && (
-                <th className={tone.filterCell}>
-                  <FilterSelect 
-                    filterKey="impact" 
-                    placeholder="All Impacts"
-                    options={[
-                      { value: 'critical', label: 'Critical' },
-                      { value: 'high', label: 'High' },
-                      { value: 'medium', label: 'Medium' },
-                      { value: 'low', label: 'Low' },
-                    ]}
-                  />
-                </th>
-              )}
-              
-              <th className={tone.filterCell}>
-                <FilterSelect 
-                  filterKey="status" 
-                  placeholder="All Statuses"
-                  options={[
-                    { value: 'open', label: 'Open' },
-                    { value: 'in_progress', label: 'In Progress' },
-                    { value: 'resolved', label: 'Resolved' },
-                    { value: 'closed', label: 'Closed' },
-                  ]}
-                />
-              </th>
-              
-              <th className={`${tone.filterCell} hidden sm:table-cell`}></th> {/* Created */}
-              {isPrivileged && <th className={tone.filterCell}></th>} {/* Action */}
-            </tr>
-            {/* --- END FILTER ROW --- */}
+            {/* --- 7. REMOVED FILTER ROW --- */}
             
           </thead>
 
@@ -286,7 +211,7 @@ export default function TicketTable({
             {pageRows.length === 0 && (
               <tr>
                 <td className={`px-4 py-8 text-center ${tone.pale}`} colSpan={isPrivileged ? (showImpact ? 8 : 7) : (showImpact ? 7 : 6)}>
-                  No tickets found{rows.length > 0 ? ' for these filters' : ''}.
+                  No tickets found.
                 </td>
               </tr>
             )}
