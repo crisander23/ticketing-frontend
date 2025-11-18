@@ -5,7 +5,7 @@ const nextConfig = {
     return [
       {
         source: '/api/:path*',
-        destination: 'http://26.251.194.56:7230/:path*', // your backend
+        destination: 'http://ddcc-utilities:7230/:path*', // your backend
       },
     ];
   },

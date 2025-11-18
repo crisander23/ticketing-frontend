@@ -188,7 +188,11 @@ export default function TicketTable({
   return (
     <div className={tone.tableWrap}>
       <div className="overflow-x-auto">
-        <table className="w-full table-fixed text-sm">
+        {/* --- 
+          FIX: Added 'min-w-[700px]' to force horizontal scrolling on mobile.
+          REMOVED 'table-fixed' to let columns size themselves.
+        --- */}
+        <table className="w-full min-w-[700px] table-auto text-sm">
           <colgroup>{colDefs}</colgroup>
 
           <thead className={tone.head}>
@@ -247,13 +251,15 @@ export default function TicketTable({
                     </span>
                   </td>
 
-                  <td className={tone.td}>{t.title || '(no title)'}</td>
+                  {/* --- FIXED: Added whitespace-nowrap to title --- */}
+                  <td className={`${tone.td} whitespace-nowrap`}>{t.title || '(no title)'}</td>
 
                   {isPrivileged && (
-                    <td className={`${tone.td} hidden md:table-cell`}>{clientName || '—'}</td>
+                    <td className={`${tone.td} hidden md:table-cell whitespace-nowrap`}>{clientName || '—'}</td>
                   )}
 
-                  <td className={tone.td}>
+                  {/* --- FIXED: Added whitespace-nowrap to agent --- */}
+                  <td className={`${tone.td} whitespace-nowrap`}>
                     {inlineAction && isEditing && agentEditable ? (
                       <select
                         value={draftAgent}
@@ -270,12 +276,12 @@ export default function TicketTable({
                   </td>
 
                   {showImpact && (
-                    <td className={tone.td}>
+                    <td className={`${tone.td} whitespace-nowrap`}>
                       <ImpactBadge value={impactNorm} dark={isDark} />
                     </td>
                   )}
 
-                  <td className={tone.td}>
+                  <td className={`${tone.td} whitespace-nowrap`}>
                     {inlineAction && isEditing ? (
                       <select
                         value={draftStatus} // This uses the real status for editing
@@ -297,7 +303,7 @@ export default function TicketTable({
                   <td className={`${tone.td} whitespace-nowrap hidden sm:table-cell`}>{created}</td>
 
                   {isPrivileged && (
-                    <td className={tone.td}>
+                    <td className={`${tone.td} whitespace-nowrap`}>
                       {inlineAction ? (
                         isEditing ? (
                           <div className="flex items-center gap-2">
