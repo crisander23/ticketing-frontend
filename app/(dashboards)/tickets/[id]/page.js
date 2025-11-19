@@ -8,14 +8,11 @@ import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/store/useAuthStore';
 import { routeForUser } from '@/lib/guards';
 import ResolutionModal from '@/components/ResolutionModal';
-import Sidebar from '@/components/Sidebar'; // <-- 1. Import Sidebar
-import { Menu } from 'lucide-react'; // <-- 2. Import Menu icon
+import Sidebar from '@/components/Sidebar'; 
+import { Menu } from 'lucide-react'; 
+import TicketAudit from '@/components/TicketAudit';
 
-/* =========================
-   Normalizers tailored to your API
-   ========================= */
-
-// ... (pick function remains the same)
+/* --- HELPER FUNCTIONS (Unchanged) --- */
 function pick(obj, keys, fallback = undefined) {
   for (const k of keys) {
     const v = k.split('.').reduce((acc, part) => (acc ? acc[part] : undefined), obj);
@@ -31,7 +28,7 @@ function normalizeAttachment(a, idx = 0) {
   
   let absoluteUrl = path;
   if (path && path.startsWith('/uploads')) {
-    const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:7230'; // Updated base URL
+    const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:7230';
     absoluteUrl = `${baseUrl}${path}`;
   }
   
@@ -42,7 +39,6 @@ function normalizeAttachment(a, idx = 0) {
   };
 }
 
-// ... (normalizeNote function remains the same)
 function normalizeNote(n, idx = 0) {
   const id = pick(n, ['note_id', 'id']) ?? `${pick(n, ['created_at'], '')}-${idx}`;
   const text = pick(n, ['note', 'note_text', 'text', 'content', 'body'], '');
@@ -51,7 +47,6 @@ function normalizeNote(n, idx = 0) {
   return { id, text, author, createdAt };
 }
 
-// ... (normalizeTicket function remains the same)
 function normalizeTicket(raw) {
   if (!raw || typeof raw !== 'object') return null;
   const t = raw.ticket ?? raw;
@@ -87,24 +82,38 @@ function normalizeTicket(raw) {
   };
 }
 
-/* =========================
-   Page Component
-   ========================= */
-
+/* --- MAIN COMPONENT --- */
 export default function TicketDetailPage() {
-  const { id } = useParams(); // e.g., "6"
+  const { id } = useParams(); 
   const router = useRouter();
   const { user } = useAuthStore();
 
+  // --- 1. THEME STATE WITH MEMORY (Synchronized) ---
+  const [theme, setTheme] = useState('dark');
+  const [isThemeLoaded, setIsThemeLoaded] = useState(false); // Prevents flash
+
+  useEffect(() => {
+    // Use 'ticketing_theme' to match the Admin pages
+    const saved = localStorage.getItem('ticketing_theme'); 
+    if (saved) {
+      setTheme(saved);
+    }
+    setIsThemeLoaded(true);
+  }, []);
+
+  const handleThemeChange = (newTheme) => {
+    setTheme(newTheme);
+    localStorage.setItem('ticketing_theme', newTheme);
+  };
+
+  // --- 2. ROLE LOGIC ---
   const rolePath = routeForUser(user);
   const isAdmin = rolePath === '/admin/dashboard';
   const isAgent = rolePath === '/agent/dashboard';
   const canManage = isAdmin || isAgent;
-  
-  // --- 3. Determine userType for Sidebar ---
   const userType = isAdmin ? 'admin' : isAgent ? 'agent' : 'client';
 
-  // Ticket + Notes
+  // --- 3. DATA FETCHING ---
   const { data: rawTicket, isLoading, error, mutate } = useSWR(
     id ? `/tickets/${id}` : null,
     fetcher
@@ -113,54 +122,38 @@ export default function TicketDetailPage() {
     canManage && id ? `/tickets/${id}/notes` : null,
     fetcher
   );
-
-  // Agents (admin only)
   const { data: allUsers } = useSWR(isAdmin ? '/admin/users' : null, fetcher);
-
-  const fileRef = useRef(null); // Ref is no longer used for upload, but we'll leave it
-  const [uploading, setUploading] = useState(false); // State is no longer used
 
   const normalized = useMemo(() => normalizeTicket(rawTicket), [rawTicket]);
 
+  // --- 4. LOCAL UI STATE ---
+  const fileRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
   const [status, setStatus] = useState('');
   const [showResolution, setShowResolution] = useState(false);
   const pendingStatusRef = useRef(null);
-  
   const [modalState, setModalState] = useState({ open: false, list: [], startIndex: 0 });
+  
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isDesktopCollapsed, setIsDesktopCollapsed] = useState(false);
 
   useEffect(() => {
     if (normalized?.status) setStatus(normalized.status);
   }, [normalized]);
 
-  /* ============ Theme (same as other pages) ============ */
-  const [theme, setTheme] = useState('dark'); // <-- 4. Changed to 'dark'
-  useEffect(() => {
-    const saved = typeof window !== 'undefined' ? localStorage.getItem('nea_theme') : null;
-    const t = saved || 'dark'; // <-- 4. Changed to 'dark'
-    setTheme(t);
-    document.documentElement.setAttribute('data-theme', t);
-  }, []);
-  
-  // --- 5. ADDED THIS BLOCK TO SYNC THEME ---
-  useEffect(() => {
-    localStorage.setItem('nea_theme', theme);
-    document.documentElement.setAttribute('data-theme', theme);
-  }, [theme]);
-  // --- END ADDITION ---
+  // --- 5. HELPERS & MUTATIONS ---
+  const refreshHistory = useCallback(() => {
+    globalMutate(`/tickets/${id}/history`); 
+  }, [id]);
 
-  // --- 6. Added Sidebar state ---
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [isDesktopCollapsed, setIsDesktopCollapsed] = useState(false);
-
-  // 7. Added refreshAll for Sidebar
   const refreshAll = useCallback(() => {
     mutate();
     if (canManage) {
       mutateNotes();
     }
-  }, [mutate, mutateNotes, canManage]);
+    refreshHistory();
+  }, [mutate, mutateNotes, canManage, refreshHistory]);
 
-  // ... (agentOptions and notes memos remain the same)
   const agentOptions = useMemo(() => {
     if (!isAdmin || !Array.isArray(allUsers)) return [];
     return allUsers
@@ -179,16 +172,20 @@ export default function TicketDetailPage() {
     return arr.map((n, idx) => normalizeNote(n, idx));
   }, [rawNotes]);
 
-  // ... (All mutation functions remain the same)
   async function updateStatus(newStatus, resolution_details) {
     await apiFetch(`/tickets/${id}`, {
       method: 'PUT',
-      body: { status: newStatus, resolution_details: resolution_details || undefined },
+      body: { 
+        status: newStatus, 
+        resolution_details: resolution_details || undefined,
+        user_id: user?.user_id 
+      },
     });
-    await mutate();
+    await mutate(); 
+    refreshHistory();
     globalMutate('/tickets');
     if (isAgent) globalMutate(`/tickets?agent_id=${user.user_id}`);
-    if (userType === 'client') { // Use userType
+    if (userType === 'client') {
       globalMutate(`/tickets/my?customer_id=${user.user_id}`);
     }
   }
@@ -219,9 +216,7 @@ export default function TicketDetailPage() {
   }
 
   async function assignAgent(newAgentId) {
-    if (newAgentId === '' || newAgentId == null) {
-      return;
-    }
+    if (newAgentId === '' || newAgentId == null) return;
     const agentIdInt = parseInt(newAgentId, 10);
     if (!Number.isInteger(agentIdInt) || agentIdInt <= 0) {
       alert('Invalid agent id.');
@@ -234,14 +229,16 @@ export default function TicketDetailPage() {
         body: {
           agent_id: agentIdInt,
           status: nextStatus,
+          user_id: user?.user_id 
         },
       });
       setStatus(nextStatus);
-      await mutate();
+      await mutate(); 
+      refreshHistory();
       globalMutate('/tickets');
       globalMutate(`/tickets/${id}`);
       if (isAgent) globalMutate(`/tickets?agent_id=${user.user_id}`);
-      if (userType === 'client') { // Use userType
+      if (userType === 'client') {
         globalMutate(`/tickets/my?customer_id=${user.user_id}`);
       }
     } catch (err) {
@@ -261,11 +258,8 @@ export default function TicketDetailPage() {
     mutateNotes();
   }
 
-  // --- 8. REMOVED uploadAttachment function ---
-  // (This is handled on the create-ticket page)
-
-  /* ============ UI bits (shared look) ============ */
-  const isDark = theme === 'dark'; // <-- 9. Fixed theme logic
+  // --- 6. STYLES ---
+  const isDark = theme === 'dark';
 
   const pageBg = isDark
     ? 'bg-gradient-to-br from-slate-900 via-blue-900 to-blue-700'
@@ -300,18 +294,25 @@ export default function TicketDetailPage() {
 
   const errorText = isDark ? 'text-rose-400' : 'text-rose-600';
 
-  /* ---------- Render states ---------- */
+  // --- 7. RENDER GUARDS ---
+  
+  // 1. Wait for theme load to prevent flicker
+  if (!isThemeLoaded) return <div className="min-h-screen bg-slate-900" />;
+
+  // 2. Loading state
   if (isLoading) return (
     <div className={`min-h-screen w-full ${pageBg} p-8`}>
       <div className={`${cardBg} p-6 ${textMain}`}>Loading…</div>
     </div>
   );
   
-  if (!user) { // Auth check after loading
+  // 3. Auth check
+  if (!user) {
     router.replace('/login');
     return null;
   }
   
+  // 4. Error states
   if (!id) return (
     <div className={`min-h-screen w-full ${pageBg} p-8`}>
       <div className={`${cardBg} p-6 ${errorText}`}>No ticket ID in URL.</div>
@@ -330,7 +331,7 @@ export default function TicketDetailPage() {
     );
   }
 
-  // Client compact
+  // --- 8. DATA PREP ---
   const clientInfo = {
     name: normalized.customer_name || '-',
     email: normalized.customer_email || '-',
@@ -339,43 +340,38 @@ export default function TicketDetailPage() {
     pos: normalized.customer_position || '-',
   };
 
-  // Map 'resolved' to 'in_progress' for clients
   const trueStatus = (normalized.status || 'open').toLowerCase();
   let displayStatus = trueStatus;
   if (!canManage && trueStatus === 'resolved') {
     displayStatus = 'in_progress';
   }
 
+  // --- 9. JSX ---
   return (
     <div className={`min-h-screen w-full ${pageBg}`}>
-      {/* --- 10. Added Sidebar --- */}
       <Sidebar 
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         isDesktopCollapsed={isDesktopCollapsed}
         onToggleDesktopCollapse={() => setIsDesktopCollapsed(prev => !prev)}
         theme={theme}
-        setTheme={setTheme}
+        setTheme={handleThemeChange} // Connected to localStorage wrapper
         onRefresh={refreshAll}
         userType={userType}
       />
       
-      {/* --- 11. Added Content Wrapper --- */}
       <div className={`flex flex-col min-h-screen transition-all duration-300 ease-in-out ${
         isDesktopCollapsed ? 'md:pl-20' : 'md:pl-64'
       }`}>
 
-        {/* --- 12. Replaced old <header> with Mobile-only Top Bar --- */}
         <header className={mobileHeaderCls}>
           <div className="min-w-0">
-            {/* --- MODIFIED MOBILE HEADER --- */}
             <h1 className={`truncate text-lg font-semibold ${textMain} uppercase`}>
               Ticket #{normalized.ticket_id ?? id}
             </h1>
             <p className={`text-xs ${textSub} truncate`}>
               {normalized.title}
             </p>
-            {/* --- END MODIFICATION --- */}
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <button className={`${buttonGhost} px-3 py-2 text-sm`} onClick={() => router.back()}>
@@ -387,10 +383,8 @@ export default function TicketDetailPage() {
           </div>
         </header>
 
-        {/* --- 13. Updated <main> padding --- */}
         <main className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 pt-4 md:pt-8 pb-8 space-y-6">
           
-          {/* --- MODIFIED DESKTOP HEADER --- */}
           <div className="hidden md:flex md:items-center md:justify-between">
             <div>
               <h1 className={`text-3xl font-semibold ${textMain} flex items-baseline`}>
@@ -406,12 +400,9 @@ export default function TicketDetailPage() {
               Back to list
             </button>
           </div>
-          {/* --- END MODIFICATION --- */}
           
-          {/* --- 14. MODIFIED META SECTION --- */}
           <div className={`${cardBg} p-4 sm:p-6`}>
             <div className="space-y-4">
-              {/* Client Info at Top */}
               <div>
                 <div className={`text-lg font-semibold ${textMain}`}>Client Information</div>
                 <div className="mt-2 space-y-1">
@@ -422,14 +413,11 @@ export default function TicketDetailPage() {
                 </div>
               </div>
 
-              {/* Divider */}
               <hr className={`my-2 ${isDark ? 'border-white/15' : 'border-slate-200'}`} />
               
-              {/* Ticket Details */}
               <div>
                 <div className={`text-lg font-semibold ${textMain} mb-2`}>Ticket Details</div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                  {/* Status */}
                   <div>
                     <div className={`text-sm ${textSub}`}>Status</div>
                     <div className="mt-1">
@@ -446,7 +434,6 @@ export default function TicketDetailPage() {
                     </div>
                   </div>
 
-                  {/* Impact */}
                   <div>
                     <div className={`text-sm ${textSub}`}>Impact</div>
                     <div className="mt-1">
@@ -454,7 +441,6 @@ export default function TicketDetailPage() {
                     </div>
                   </div>
                   
-                  {/* Category */}
                   <div>
                     <div className={`text-sm ${textSub}`}>Category</div>
                     <div className="mt-1">
@@ -462,7 +448,6 @@ export default function TicketDetailPage() {
                     </div>
                   </div>
                   
-                  {/* Updated */}
                   <div>
                     <div className={`text-sm ${textSub}`}>Updated</div>
                     <div className={`mt-1 ${textMain}`}>
@@ -472,10 +457,8 @@ export default function TicketDetailPage() {
                 </div>
               </div>
               
-              {/* Divider */}
               <hr className={`my-2 ${isDark ? 'border-white/15' : 'border-slate-200'}`} />
 
-              {/* Assignment */}
               <div>
                 <div className={`text-lg font-semibold ${textMain}`}>Assignment</div>
                 <div className={`text-sm ${textSub} mt-2`}>Assigned Agent</div>
@@ -499,7 +482,6 @@ export default function TicketDetailPage() {
                 </div>
               </div>
 
-              {/* Resolution Details (if it exists) */}
               {normalized?.resolution_details && (
                 <>
                   <hr className={`my-2 ${isDark ? 'border-white/15' : 'border-slate-200'}`} />
@@ -511,23 +493,15 @@ export default function TicketDetailPage() {
               )}
             </div>
           </div>
-          {/* --- END MODIFIED META SECTION --- */}
 
-
-          {/* Description */}
           <div className={`${cardBg} p-4 sm:p-6`}>
             <div className={`text-sm ${textSub}`}>Description</div>
             <div className={`mt-1 whitespace-pre-wrap ${textMain}`}>{normalized.description}</div>
           </div>
 
-          {/* Attachments */}
           <div className={`${cardBg} p-4 sm:p-6`}>
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div className={`font-medium ${textMain}`}>Attachments</div>
-              
-              {/* --- 15. REMOVED UPLOAD UI --- */}
-              {/* The "canManage" block with the input and button has been removed */}
-              
             </div>
 
             <ul className={`mt-3 space-y-1 text-sm ${textMain}`}>
@@ -548,7 +522,15 @@ export default function TicketDetailPage() {
             </ul>
           </div>
 
-          {/* Internal Notes (Admin/Agent only) */}
+          {isAdmin && (
+            <div className={`${cardBg} p-4 sm:p-6 space-y-4`}>
+              <h3 className={`text-lg font-semibold ${textMain}`}>Audit History</h3>
+              <div className="mt-4">
+                <TicketAudit ticketId={id} theme={theme} />
+              </div>
+            </div>
+          )}
+
           {canManage && (
             <div className={`${cardBg} p-4 sm:p-6 space-y-4`}>
               <div className={`font-medium ${textMain}`}>Internal Notes</div>
@@ -593,8 +575,8 @@ export default function TicketDetailPage() {
   );
 }
 
+/* --- SUB-COMPONENTS (Unchanged) --- */
 
-/* ===== Solid status badge (matches KPI colors) ===== */
 function StatusSolid({ value }) {
   const v = (value || '').toLowerCase();
   let cls = 'bg-slate-200 text-slate-900';
@@ -609,11 +591,9 @@ function StatusSolid({ value }) {
   );
 }
 
-/* ===== Robust Impact badge (now recognizes many encodings) ===== */
 function ImpactBadge({ value, dark }) {
   const v = (value || '').toString().toLowerCase();
 
-  // default: visible neutral chip (no more translucent '—')
   let label = value ? value.toUpperCase() : 'UNKNOWN';
   let cls = dark ? 'bg-white text-gray-900' : 'bg-slate-300 text-slate-900';
 
@@ -638,13 +618,11 @@ function ImpactBadge({ value, dark }) {
   );
 }
 
-
-/* ——— tiny inline component for notes composer ——— */
 function NoteComposer({ onAdd, theme }) {
   const [text, setText] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const isDark = theme === 'dark'; // <-- 14. Fixed theme logic
+  const isDark = theme === 'dark';
 
   const inputWrap = isDark
     ? 'rounded-xl bg-white/10 border border-white/15'
@@ -689,11 +667,9 @@ function NoteComposer({ onAdd, theme }) {
   );
 }
 
-// --- MODIFIED THIS COMPONENT ---
 function AttachmentModal({ open, onClose, attachments = [], startIndex = 0, theme }) {
   const [currentIndex, setCurrentIndex] = useState(startIndex);
 
-  // When modal opens, reset the index to the one that was clicked
   useEffect(() => {
     if (open) {
       setCurrentIndex(startIndex);
@@ -708,16 +684,16 @@ function AttachmentModal({ open, onClose, attachments = [], startIndex = 0, them
   const canGoNext = currentIndex < total - 1;
 
   const goPrev = (e) => {
-    e.stopPropagation(); // Prevent modal close
+    e.stopPropagation(); 
     if (canGoPrev) setCurrentIndex(currentIndex - 1);
   };
   
   const goNext = (e) => {
-    e.stopPropagation(); // Prevent modal close
+    e.stopPropagation(); 
     if (canGoNext) setCurrentIndex(currentIndex + 1);
   };
 
-  const isDark = theme === 'dark'; // <-- 14. Fixed theme logic
+  const isDark = theme === 'dark'; 
   
   const cardBg = isDark ? 'bg-slate-800 border border-white/15' : 'bg-white border border-slate-200';
   const textMain = isDark ? 'text-white' : 'text-slate-900';
@@ -728,7 +704,6 @@ function AttachmentModal({ open, onClose, attachments = [], startIndex = 0, them
     ${isDark ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-black/10 hover:bg-black/20 text-black'}
     disabled:opacity-20 disabled:cursor-not-allowed`;
 
-  // Check file type
   const isImage = attachment.url && /\.(jpe?g|png|gif|webp|svg)$/i.test(attachment.url);
   const isVideo = attachment.url && /\.(mp4|webm|ogg)$/i.test(attachment.url);
 
@@ -741,7 +716,6 @@ function AttachmentModal({ open, onClose, attachments = [], startIndex = 0, them
         className={`w-full max-w-3xl max-h-[90vh] flex flex-col rounded-xl shadow-lg ${cardBg}`}
         onClick={(e) => e.stopPropagation()} 
       >
-        {/* Header with counter */}
         <div className={`flex items-center justify-between p-4 border-b ${isDark ? 'border-white/15' : 'border-slate-200'}`}>
           <h3 className={`font-medium ${textMain} truncate`}>{attachment.filename}</h3>
           <div className="flex items-center gap-3">
@@ -750,7 +724,6 @@ function AttachmentModal({ open, onClose, attachments = [], startIndex = 0, them
           </div>
         </div>
         
-        {/* Body with navigation */}
         <div className="p-4 overflow-auto relative">
           {isImage && (
             <img src={attachment.url} alt={attachment.filename} className="w-full h-auto max-h-[70vh] object-contain" />
@@ -775,7 +748,6 @@ function AttachmentModal({ open, onClose, attachments = [], startIndex = 0, them
             </div>
           )}
 
-          {/* Navigation Buttons */}
           <button onClick={goPrev} disabled={!canGoPrev} className={`${navButton} left-6`}>
             &lt;
           </button>

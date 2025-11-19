@@ -14,16 +14,25 @@ export default function AgentTicketsPage() {
   const { user } = useAuthStore();
   const agentId = user?.user_id ?? null;
 
-  // Theme
+  // --- 1. THEME STATE WITH MEMORY (Synchronized) ---
   const [theme, setTheme] = useState('dark');
+  const [isThemeLoaded, setIsThemeLoaded] = useState(false); // Prevents flash
+
   useEffect(() => {
-    const saved = typeof window !== 'undefined' ? localStorage.getItem('nea_theme') : null;
-    const t = saved || 'dark';
-    setTheme(t);
-    document.documentElement.setAttribute('data-theme', t);
+    // Use 'ticketing_theme' to match the Admin/Dashboard pages
+    const saved = localStorage.getItem('ticketing_theme');
+    if (saved) {
+      setTheme(saved);
+    }
+    setIsThemeLoaded(true);
   }, []);
 
-  // UI
+  const handleThemeChange = (newTheme) => {
+    setTheme(newTheme);
+    localStorage.setItem('ticketing_theme', newTheme);
+  };
+
+  // --- 2. UI STATE ---
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [resolveOpen, setResolveOpen] = useState(false);
@@ -33,12 +42,13 @@ export default function AgentTicketsPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false); // For mobile
   const [isDesktopCollapsed, setIsDesktopCollapsed] = useState(false); // For desktop
 
-  // Data
+  // --- 3. DATA FETCHING ---
   const { data: tickets, error, isLoading, mutate } = useSWR(
     agentId ? `/tickets?agent_id=${agentId}` : null,
     fetcher
   );
 
+  // --- 4. DATA PROCESSING ---
   const counts = useMemo(() => {
     const list = tickets || [];
     return { all: list.length };
@@ -58,14 +68,16 @@ export default function AgentTicketsPage() {
     return list;
   }, [tickets, statusFilter, query]);
 
-  // Mutations
+  // --- 5. MUTATIONS ---
   const onStatusChange = useCallback(
     async (ticketId, newStatus) => {
+      // Intercept 'resolved' status to show modal
       if ((newStatus || '').toLowerCase() === 'resolved') {
         setResolvingTicketId(ticketId);
         setResolveOpen(true);
         return;
       }
+      // Otherwise update immediately
       await apiFetch(`/tickets/${ticketId}`, { method: 'PUT', body: { status: newStatus } });
       await mutate();
     },
@@ -92,34 +104,43 @@ export default function AgentTicketsPage() {
     mutate();
   }, [mutate]);
 
-  // Theming tokens
-  const pageBg = theme === 'dark'
+  // --- 6. THEME STYLES ---
+  const bgClass = theme === 'dark'
     ? 'bg-gradient-to-br from-slate-900 via-blue-900 to-blue-700 text-white'
     : 'bg-slate-50 text-slate-900';
+  
   const cardTitle = theme === 'dark' ? 'text-white' : 'text-slate-900';
   const subTitle  = theme === 'dark' ? 'text-white/80' : 'text-slate-600';
+  
   const inputWrap = theme === 'dark'
     ? 'rounded-xl bg-white/10 border border-white/15'
     : 'rounded-xl bg-white border border-slate-300';
+  
   const inputField = theme === 'dark'
     ? 'bg-transparent text-white placeholder-white/60'
     : 'bg-transparent text-slate-900 placeholder-slate-400';
+  
   const selectField = theme === 'dark'
     ? 'rounded-md border border-white/15 bg-transparent text-white'
     : 'rounded-md border border-slate-300 bg-white text-slate-900';
+  
   const buttonGhost = theme === 'dark'
     ? 'rounded-lg border border-white/15 bg-transparent text-white hover:bg-white/10'
     : 'rounded-lg border border-slate-300 bg-white text-slate-900 hover:bg-slate-50';
 
+  // Prevent rendering until theme is loaded
+  if (!isThemeLoaded) return <div className="min-h-screen bg-slate-900" />;
+
   return (
-    <div className={`min-h-screen w-full ${pageBg}`}>
+    <div className={`min-h-screen w-full ${bgClass}`}>
+      
       <Sidebar 
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         isDesktopCollapsed={isDesktopCollapsed}
         onToggleDesktopCollapse={() => setIsDesktopCollapsed(prev => !prev)}
         theme={theme}
-        setTheme={setTheme}
+        setTheme={handleThemeChange} // <-- Connected to localStorage
         onRefresh={refreshAll}
         userType="agent"
       />
@@ -141,8 +162,9 @@ export default function AgentTicketsPage() {
           </button>
         </header>
 
-        {/* Canvas */}
+        {/* --- Main Content --- */}
         <main className="w-full px-4 sm:px-6 pt-4 md:pt-8 pb-8 space-y-6">
+          
           {/* Page Title (Desktop-only) */}
           <div className="hidden md:block">
             <h1 className={`text-3xl font-semibold ${cardTitle}`}>My Assigned Tickets</h1>
@@ -176,7 +198,7 @@ export default function AgentTicketsPage() {
             </select>
           </div>
 
-          {/* Tickets */}
+          {/* Tickets Table */}
           <section className="space-y-3">
             <div>
               <h2 className={`text-lg font-semibold ${cardTitle}`}>My Assigned Tickets</h2>
@@ -193,20 +215,20 @@ export default function AgentTicketsPage() {
                 Failed to load tickets. Please refresh.
               </div>
             ) : (
-          <TicketTable
-            rows={filteredTickets || []}
-            role="agent"
-            inlineAction
-            agentEditable={false} // Action edits STATUS only
-            surface={theme === 'dark' ? 'dark' : 'light'}
-            perPage={10}
-            showImpact
-            onStatusChange={onStatusChange} // handles non-resolved statuses
-            onRequestResolve={(ticketId) => { // NEW: open modal first for "resolved"
-              setResolvingTicketId(ticketId);
-              setResolveOpen(true);
-            }}
-          />
+              <TicketTable
+                rows={filteredTickets || []}
+                role="agent"
+                inlineAction
+                agentEditable={false} // Action edits STATUS only
+                surface={theme === 'dark' ? 'dark' : 'light'}
+                perPage={10}
+                showImpact
+                onStatusChange={onStatusChange} // This logic now handles the modal opening internally
+                onRequestResolve={(ticketId) => { // Fallback explicit handler
+                  setResolvingTicketId(ticketId);
+                  setResolveOpen(true);
+                }}
+              />
             )}
           </section>
         </main>
@@ -217,7 +239,7 @@ export default function AgentTicketsPage() {
         open={resolveOpen} 
         onCancel={cancelResolution} 
         onSubmit={submitResolution}
-        theme={theme} // Pass the theme to the modal
+        theme={theme} 
       />
     </div>
   );

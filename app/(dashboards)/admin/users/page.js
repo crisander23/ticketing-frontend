@@ -7,22 +7,30 @@ import RegisterAgentModal from '@/components/RegisterAgentModal';
 import { fetcher } from '@/lib/fetcher';
 import { useAuthStore } from '@/store/useAuthStore';
 import Sidebar from '@/components/Sidebar'; 
-import { Menu, UserPlus } from 'lucide-react'; // <-- Import UserPlus
+import { Menu, UserPlus } from 'lucide-react';
 
 export default function AdminUsersPage() {
   const { user } = useAuthStore();
 
-  /* THEME: 'dark' (gradient/dark) or 'light' */
+  // --- 1. THEME STATE WITH MEMORY (Synchronized) ---
   const [theme, setTheme] = useState('dark'); 
-  useEffect(() => {
-    const saved = localStorage.getItem('nea_theme') || 'dark'; 
-    setTheme(saved);
-  }, []);
-  useEffect(() => {
-    localStorage.setItem('nea_theme', theme);
-  }, [theme]);
+  const [isThemeLoaded, setIsThemeLoaded] = useState(false); // Prevents flash
 
-  // UI state
+  useEffect(() => {
+    // Use 'ticketing_theme' to match Dashboard & History & Tickets
+    const saved = localStorage.getItem('ticketing_theme'); 
+    if (saved) {
+      setTheme(saved);
+    }
+    setIsThemeLoaded(true);
+  }, []);
+
+  const handleThemeChange = (newTheme) => {
+    setTheme(newTheme);
+    localStorage.setItem('ticketing_theme', newTheme);
+  };
+
+  // --- 2. UI STATE ---
   const [openReg, setOpenReg] = useState(false);
   const [query, setQuery] = useState('');
   
@@ -30,7 +38,7 @@ export default function AdminUsersPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false); // For mobile
   const [isDesktopCollapsed, setIsDesktopCollapsed] = useState(false); // For desktop
 
-  // Data
+  // --- 3. DATA FETCHING ---
   const { data: users, error: usersError, isLoading: usersLoading, mutate: mutateUsers } =
     useSWR('/admin/users', fetcher);
 
@@ -39,7 +47,7 @@ export default function AdminUsersPage() {
     mutateUsers();
   }, [mutateUsers]);
 
-  // Filters
+  // --- 4. FILTERS ---
   const filteredUsers = useMemo(() => {
     let list = users || [];
     if (query.trim()) {
@@ -53,7 +61,7 @@ export default function AdminUsersPage() {
     return list;
   }, [users, query]);
 
-  /* --- Theme Styles --- */
+  /* --- 5. THEME STYLES --- */
   const bgClass =
     theme === 'dark' 
       ? 'bg-gradient-to-br from-slate-900 via-blue-900 to-blue-700 text-white'
@@ -77,12 +85,8 @@ export default function AdminUsersPage() {
       ? 'rounded-lg border border-white/15 bg-transparent text-white hover:bg-white/10'
       : 'rounded-lg border border-slate-300 bg-white text-slate-900 hover:bg-slate-50';
   
-  // This style is correct, but the button below was just using the wrong variable
-  const buttonPrimary =
-    theme === 'dark' 
-      ? 'rounded-lg bg-white text-gray-900 hover:bg-gray-100'
-      : 'rounded-lg bg-slate-900 text-white hover:bg-slate-800';
-  /* --- End Theme Styles --- */
+  // Prevent rendering until theme is loaded
+  if (!isThemeLoaded) return <div className="min-h-screen bg-slate-900" />;
 
   return (
     <div className={`min-h-screen w-full ${bgClass}`}>
@@ -93,8 +97,7 @@ export default function AdminUsersPage() {
         isDesktopCollapsed={isDesktopCollapsed}
         onToggleDesktopCollapse={() => setIsDesktopCollapsed(prev => !prev)}
         theme={theme}
-        setTheme={setTheme}
-        // onRegisterAgent={() => setOpenReg(true)} // <-- Removed this
+        setTheme={handleThemeChange} // <-- Connected to localStorage
         onRefresh={refreshAll}
         userType="admin"
       />
@@ -125,14 +128,18 @@ export default function AdminUsersPage() {
               <h1 className={`text-3xl font-semibold ${cardTitle}`}>User Management</h1>
               <p className={`text-sm ${subTitle}`}>Register, view, and manage all users</p>
             </div>
-            {/* --- FIXED: Added px-3 py-2 text-sm for padding --- */}
-            <button 
-              onClick={() => setOpenReg(true)} 
-              className={`${buttonGhost} flex items-center gap-2 px-3 py-2 text-sm`}
-            >
-              <UserPlus className="h-4 w-4" />
-              <span>Register Agent</span>
-            </button>
+            
+            {/* --- Buttons Group --- */}
+            <div className="flex items-center gap-3">
+                {/* Register Button */}
+                <button 
+                    onClick={() => setOpenReg(true)} 
+                    className={`${buttonGhost} flex items-center gap-2 px-3 py-2 text-sm font-medium transition-colors`}
+                >
+                    <UserPlus className="h-4 w-4" />
+                    <span>Register Agent</span>
+                </button>
+            </div>
           </div>
 
           {/* Search */}

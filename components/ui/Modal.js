@@ -45,12 +45,12 @@ export default function Modal({
   
   return (
     // 3. Apply the dynamic backdrop class
+    // REMOVED: onClick={onClose} so clicking outside doesn't close it
     <div 
       className={`fixed inset-0 z-50 ${backdropClass} flex justify-center pt-16 sm:pt-24 px-4`} 
-      onClick={onClose}
     >
       <div
-        // 4. Apply the dynamic panel class (removed 'p-4' to add structure)
+        // 4. Apply the dynamic panel class
         className={`w-full max-w-lg h-fit ${panelClass}`}
         onClick={(e) => e.stopPropagation()}
       >

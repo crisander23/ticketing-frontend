@@ -12,37 +12,37 @@ export default function ClientTicketsPage() {
   const { user } = useAuthStore();
   const customerId = user?.user_id ?? null;
 
-  /* ============ Theme ============ */
+  // --- 1. THEME STATE WITH MEMORY (Synchronized) ---
   const [theme, setTheme] = useState('dark');
-  useEffect(() => {
-    const saved = typeof window !== 'undefined' ? localStorage.getItem('nea_theme') : null;
-    const t = saved || 'dark';
-    setTheme(t);
-    document.documentElement.setAttribute('data-theme', t);
-  }, []);
-  
-  // --- 1. ADDED THIS BLOCK TO SYNC THEME ---
-  useEffect(() => {
-    localStorage.setItem('nea_theme', theme);
-    document.documentElement.setAttribute('data-theme', theme);
-  }, [theme]);
-  // --- END ADDITION ---
+  const [isThemeLoaded, setIsThemeLoaded] = useState(false); // Prevents flash
 
-  /* ============ Data ============ */
+  useEffect(() => {
+    // Use 'ticketing_theme' to match Admin/Agent pages
+    const saved = localStorage.getItem('ticketing_theme');
+    if (saved) {
+      setTheme(saved);
+    }
+    setIsThemeLoaded(true);
+  }, []);
+
+  const handleThemeChange = (newTheme) => {
+    setTheme(newTheme);
+    localStorage.setItem('ticketing_theme', newTheme);
+  };
+
+  // --- 2. DATA FETCHING ---
   const { data: tickets, error, isLoading, mutate } = useSWR(
     customerId ? `/tickets/my?customer_id=${customerId}` : null,
     fetcher
   );
   
-  // Sidebar state
+  // --- 3. UI STATE ---
   const [sidebarOpen, setSidebarOpen] = useState(false); // For mobile
   const [isDesktopCollapsed, setIsDesktopCollapsed] = useState(false); // For desktop
-
-  /* ============ UI State ============ */
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // all|open|in_progress|resolved|closed
 
-  /* ============ Derived ============ */
+  // --- 4. DATA PROCESSING ---
   const counts = useMemo(() => {
     return { all: (tickets || []).length };
   }, [tickets]);
@@ -65,7 +65,7 @@ export default function ClientTicketsPage() {
     mutate();
   }, [mutate]);
 
-  /* ============ UI bits (shared look) ============ */
+  // --- 5. THEME STYLES ---
   const pageBg =
     theme === 'dark'
       ? 'bg-gradient-to-br from-slate-900 via-blue-900 to-blue-700 text-white'
@@ -94,6 +94,9 @@ export default function ClientTicketsPage() {
       ? 'rounded-md border border-white/20 bg-white/10 text-white px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300'
       : 'rounded-md border border-slate-300 bg-white text-slate-800 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300';
 
+  // Prevent rendering until theme is loaded
+  if (!isThemeLoaded) return <div className="min-h-screen bg-slate-900" />;
+
   return (
     <div className={`min-h-screen w-full ${pageBg}`}>
       <Sidebar 
@@ -102,7 +105,7 @@ export default function ClientTicketsPage() {
         isDesktopCollapsed={isDesktopCollapsed}
         onToggleDesktopCollapse={() => setIsDesktopCollapsed(prev => !prev)}
         theme={theme}
-        setTheme={setTheme}
+        setTheme={handleThemeChange} // <-- Connected to localStorage
         onRefresh={refreshAll}
         userType="client"
       />
@@ -148,11 +151,7 @@ export default function ClientTicketsPage() {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className={
-                theme === 'dark'
-                  ? 'rounded-md border border-white/20 bg-white/10 text-white px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300'
-                  : 'rounded-md border border-slate-300 bg-white text-slate-800 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300'
-              }
+              className={selectField}
             >
               <option className="text-black" value="all">All</option>
               <option className="text-black" value="open">Open</option>
@@ -162,7 +161,7 @@ export default function ClientTicketsPage() {
             </select>
           </div>
 
-          {/* Tickets (full width table, impact column, no inline actions) */}
+          {/* Tickets Table */}
           <section className="space-y-3">
             <div>
               <h2 className={`text-lg font-semibold ${textMain}`}>My Tickets</h2>

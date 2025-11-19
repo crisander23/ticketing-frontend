@@ -6,40 +6,54 @@ import { fetcher } from '@/lib/fetcher';
 import { useAuthStore } from '@/store/useAuthStore';
 import Sidebar from '@/components/Sidebar'; 
 import { Menu } from 'lucide-react';
-import TicketCharts from '@/components/TicketCharts'; // <-- 1. Import charts
-import Link from 'next/link'; // <-- 2. Import Link
+import TicketCharts from '@/components/TicketCharts'; 
+import Link from 'next/link';
 
 export default function AgentDashboardPage() {
   const { user } = useAuthStore();
   const agentId = user?.user_id ?? null;
 
-  /* THEME: 'dark' (gradient/dark) or 'light' */
+  // --- 1. THEME STATE WITH MEMORY (Synchronized) ---
   const [theme, setTheme] = useState('dark');
-  useEffect(() => {
-    const saved = localStorage.getItem('nea_theme') || 'dark';
-    setTheme(saved);
-  }, []);
-  useEffect(() => {
-    localStorage.setItem('nea_theme', theme);
-  }, [theme]);
+  const [isThemeLoaded, setIsThemeLoaded] = useState(false); // Prevents flash
 
-  // Sidebar state
+  useEffect(() => {
+    // Use 'ticketing_theme' to match the Admin pages
+    const saved = localStorage.getItem('ticketing_theme'); 
+    if (saved) {
+      setTheme(saved);
+    }
+    setIsThemeLoaded(true);
+  }, []);
+
+  const handleThemeChange = (newTheme) => {
+    setTheme(newTheme);
+    localStorage.setItem('ticketing_theme', newTheme);
+  };
+
+  // --- 2. UI STATE ---
   const [sidebarOpen, setSidebarOpen] = useState(false); // For mobile
   const [isDesktopCollapsed, setIsDesktopCollapsed] = useState(false); // For desktop
 
-  // Data
+  // --- 3. DATA FETCHING ---
   const { data: tickets, error: ticketsError, isLoading: ticketsLoading, mutate: mutateTickets } = useSWR(
     agentId ? `/tickets?agent_id=${agentId}` : null,
     fetcher
   );
 
+  // --- 4. DATA PROCESSING ---
   const counts = useMemo(() => {
     const list = tickets || [];
     const by = (s) => list.filter(t => (t.status || '').toLowerCase() === s).length;
-    return { all: list.length, open: by('open'), in_progress: by('in_progress'), resolved: by('resolved'), closed: by('closed') };
+    return { 
+        all: list.length, 
+        open: by('open'), 
+        in_progress: by('in_progress'), 
+        resolved: by('resolved'), 
+        closed: by('closed') 
+    };
   }, [tickets]);
 
-  // --- 3. Added Memos for Priority Lists ---
   const newlyAssigned = useMemo(() => {
     if (!tickets) return [];
     return tickets
@@ -58,15 +72,30 @@ export default function AgentDashboardPage() {
       .sort((a, b) => new Date(a.created_at) - new Date(b.created_at)) // Oldest first
       .slice(0, 5); // Get top 5
   }, [tickets]);
-  // --- End Memos ---
-
 
   // Mutations
   const refreshAll = useCallback(() => {
     mutateTickets();
   }, [mutateTickets]);
 
-  /* KPI card */
+  // --- 5. THEME STYLES ---
+  const bgClass =
+    theme === 'dark'
+      ? 'bg-gradient-to-br from-slate-900 via-blue-900 to-blue-700 text-white'
+      : 'bg-slate-50 text-slate-900';
+
+  const cardTitle = theme === 'dark' ? 'text-white' : 'text-slate-900';
+  const subTitle = theme === 'dark' ? 'text-white/80' : 'text-slate-600';
+  const cardBg = theme === 'dark'
+    ? 'rounded-xl border border-white/15 bg-white/5'
+    : 'rounded-xl border border-slate-200 bg-white';
+
+  const buttonGhost =
+    theme === 'dark'
+      ? 'rounded-lg border border-white/15 bg-transparent text-white hover:bg-white/10'
+      : 'rounded-lg border border-slate-300 bg-white text-slate-900 hover:bg-slate-50';
+
+  /* KPI Component */
   const Kpi = ({ label, value, color }) => {
     const tone =
       {
@@ -84,23 +113,8 @@ export default function AgentDashboardPage() {
     );
   };
 
-  /* --- Theme Styles --- */
-  const bgClass =
-    theme === 'dark'
-      ? 'bg-gradient-to-br from-slate-900 via-blue-900 to-blue-700 text-white'
-      : 'bg-slate-50 text-slate-900';
-
-  const cardTitle = theme === 'dark' ? 'text-white' : 'text-slate-900';
-  const subTitle = theme === 'dark' ? 'text-white/80' : 'text-slate-600';
-  const cardBg = theme === 'dark'
-    ? 'rounded-xl border border-white/15 bg-white/5'
-    : 'rounded-xl border border-slate-200 bg-white';
-
-  const buttonGhost =
-    theme === 'dark'
-      ? 'rounded-lg border border-white/15 bg-transparent text-white hover:bg-white/10'
-      : 'rounded-lg border border-slate-300 bg-white text-slate-900 hover:bg-slate-50';
-  /* --- End Theme Styles --- */
+  // Prevent rendering until theme is loaded
+  if (!isThemeLoaded) return <div className="min-h-screen bg-slate-900" />;
 
   return (
     <div className={`min-h-screen w-full ${bgClass}`}>
@@ -111,7 +125,7 @@ export default function AgentDashboardPage() {
         isDesktopCollapsed={isDesktopCollapsed}
         onToggleDesktopCollapse={() => setIsDesktopCollapsed(prev => !prev)}
         theme={theme}
-        setTheme={setTheme}
+        setTheme={handleThemeChange} // <-- Connected to localStorage
         onRefresh={refreshAll}
         userType="agent"
       />
@@ -151,7 +165,7 @@ export default function AgentDashboardPage() {
             <Kpi label="Closed" value={counts.closed} color="emerald" />
           </div>
           
-          {/* --- 4. Added Priority Lists --- */}
+          {/* --- Priority Lists --- */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <MiniTicketList 
               title="Newly Assigned" 
@@ -167,7 +181,7 @@ export default function AgentDashboardPage() {
             />
           </div>
 
-          {/* --- 5. Added Charts Section --- */}
+          {/* --- Charts Section --- */}
           <section>
             <h2 className={`text-xl font-semibold ${cardTitle} mb-3`}>My Workload Analytics</h2>
             {ticketsLoading ? (
@@ -208,7 +222,7 @@ export default function AgentDashboardPage() {
   );
 }
 
-// --- 6. Added MiniTicketList Sub-component ---
+// --- Sub-component: Mini Ticket List ---
 function MiniTicketList({ title, tickets = [], theme, emptyText }) {
   const isDark = theme === 'dark';
   const cardBg = isDark ? 'rounded-xl border border-white/15 bg-white/5' : 'rounded-xl border border-slate-200 bg-white';

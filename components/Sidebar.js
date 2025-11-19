@@ -15,7 +15,8 @@ import {
   ChevronLeft, 
   ChevronRight,
   Ticket,
-  PlusSquare
+  PlusSquare,
+  History // <--- Import History Icon
 } from 'lucide-react';
 
 /* --- Helper: NavLink Component --- */
@@ -81,7 +82,7 @@ export default function Sidebar({
   const dashboardHref = useMemo(() => {
     if (userType === 'admin') return '/admin/dashboard';
     if (userType === 'agent') return '/agent/dashboard';
-    if (userType === 'client') return '/client/dashboard'; // <-- FIXED
+    if (userType === 'client') return '/client/dashboard'; 
     return '/';
   }, [userType]);
 
@@ -136,13 +137,13 @@ export default function Sidebar({
         `}
       >
         
-        {/* --- 2a. MODIFIED Header --- */}
+        {/* 2a. Header (Logo/Title & Mobile Close) */}
         <div className={`flex h-16 shrink-0 items-center justify-between px-4 ${headerClass}`}>
           <h1 className={`text-xl font-semibold whitespace-nowrap overflow-hidden ${textMain} transition-opacity duration-200 ${isDesktopCollapsed ? 'opacity-0' : 'opacity-100'}`}>
             DDCC HELPDESK
           </h1>
 
-          {/* --- Desktop Minimize Button (MOVED HERE) --- */}
+          {/* --- Desktop Minimize Button --- */}
           <button
             onClick={onToggleDesktopCollapse}
             className={`hidden md:flex p-2 rounded-lg ${isDark ? 'text-white/80 hover:bg-white/10 hover:text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
@@ -160,13 +161,9 @@ export default function Sidebar({
             <X className={`h-5 w-5 ${textMain}`} />
           </button>
         </div>
-        {/* --- END MODIFIED Header --- */}
-
 
         {/* 2b. Main Navigation & Actions */}
         <nav className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-2">
-          
-          {/* --- DYNAMIC NAVIGATION LINKS --- */}
           
           {/* --- Always Show Dashboard --- */}
           <NavLink href={dashboardHref} icon={LayoutDashboard} theme={theme} isCollapsed={isDesktopCollapsed}>
@@ -181,6 +178,9 @@ export default function Sidebar({
               </NavLink>
               <NavLink href="/admin/users" icon={Users} theme={theme} isCollapsed={isDesktopCollapsed}>
                 Users
+              </NavLink>
+              <NavLink href="/admin/history" icon={History} theme={theme} isCollapsed={isDesktopCollapsed}>
+                History
               </NavLink>
             </>
           )}
@@ -213,10 +213,9 @@ export default function Sidebar({
           </div>
         </nav>
 
-        {/* --- 2c. MODIFIED Footer --- */}
+        {/* 2c. Footer (User & Logout) */}
         <div className={`p-4 ${footerClass} space-y-3 shrink-0`}>
-          {/* --- Desktop Minimize Button (REMOVED FROM HERE) --- */}
-
+          
           {/* Theme Toggle */}
           <button
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
@@ -243,8 +242,6 @@ export default function Sidebar({
             <span className={isDesktopCollapsed ? 'hidden' : 'block'}>Logout</span>
           </button>
         </div>
-        {/* --- END MODIFIED Footer --- */}
-
       </div>
     </>
   );

@@ -4,74 +4,52 @@ import { useEffect, useMemo, useState, useCallback } from 'react';
 import { redirect, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/useAuthStore';
 import { apiFetch } from '@/lib/api';
-import Sidebar from '@/components/Sidebar'; // <-- 1. Import Sidebar
-import { Menu } from 'lucide-react'; // <-- 2. Import Menu icon
+import Sidebar from '@/components/Sidebar';
+import { Menu } from 'lucide-react';
 
 export default function CreateTicketPage() {
   const { user } = useAuthStore();
   const router = useRouter();
 
-  // Auth gate
-  if (!user) redirect('/login');
-  if (user.user_type !== 'client') redirect('/login');
-
-  /* ================= Theme (dark/light) ================= */
-  const [theme, setTheme] = useState('dark'); 
-  useEffect(() => {
-    const saved = typeof window !== 'undefined' ? localStorage.getItem('nea_theme') : null;
-    const t = saved || 'dark'; 
-    setTheme(t);
-    document.documentElement.setAttribute('data-theme', t);
-  }, []);
+  // --- 1. AUTH GUARD ---
+  // Ideally, this check should happen in middleware, but client-side check helps too.
+  if (user && user.user_type !== 'client') {
+     // Optional: Redirect agents/admins away or let them stay
+     // router.replace('/admin/dashboard');
+  }
   
-  // --- 1. ADDED THIS BLOCK TO SYNC THEME ---
   useEffect(() => {
-    localStorage.setItem('nea_theme', theme);
-    document.documentElement.setAttribute('data-theme', theme);
-  }, [theme]);
-  // --- END ADDITION ---
+    if (!user) router.replace('/login');
+  }, [user, router]);
 
-  // --- 4. Added Sidebar state ---
+  if (!user) return null; // Avoid flash of content
+
+  // --- 2. THEME STATE WITH MEMORY (Synchronized) ---
+  const [theme, setTheme] = useState('dark');
+  const [isThemeLoaded, setIsThemeLoaded] = useState(false);
+
+  useEffect(() => {
+    // Use 'ticketing_theme' to match the Client Dashboard
+    const saved = localStorage.getItem('ticketing_theme');
+    if (saved) {
+      setTheme(saved);
+    }
+    setIsThemeLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    if (isThemeLoaded) {
+      localStorage.setItem('ticketing_theme', theme);
+    }
+  }, [theme, isThemeLoaded]);
+
+  // --- 3. SIDEBAR STATE ---
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isDesktopCollapsed, setIsDesktopCollapsed] = useState(false);
   
-  // 5. Added onRefresh prop for Sidebar (no-op on this page)
-  const refreshAll = useCallback(() => {}, []);
+  const refreshAll = useCallback(() => {}, []); // No-op for create page
 
-
-  /* --- 6. Updated all theme styles from 'ocean' to 'dark' --- */
-  const pageBg =
-    theme === 'dark'
-      ? 'bg-gradient-to-br from-slate-900 via-blue-900 to-blue-700'
-      : 'bg-slate-100';
-
-  // This class is for the new mobile header
-  const mobileHeaderCls =
-    theme === 'dark'
-      ? 'sticky top-0 z-30 flex h-16 items-center justify-between px-4 md:hidden bg-slate-900/70 border-b border-white/10 backdrop-blur'
-      : 'sticky top-0 z-30 flex h-16 items-center justify-between px-4 md:hidden bg-white/90 border-b border-slate-200 backdrop-blur';
-
-  const textMain = theme === 'dark' ? 'text-white' : 'text-slate-900';
-  const textSub  = theme === 'dark' ? 'text-white/80' : 'text-slate-600';
-
-  const inputWrap = theme === 'dark'
-    ? 'rounded-xl border border-white/20 bg-white/10 text-white placeholder-white/70 focus:ring-2 focus:ring-blue-300'
-    : 'rounded-xl border border-slate-300 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-slate-300';
-
-  const selectWrap = inputWrap;
-  const areaWrap   = inputWrap;
-
-  const buttonGhost = theme === 'dark'
-    ? 'rounded-lg border border-white/20 bg-white/10 hover:bg-white/15 text-white px-3 py-2 text-sm'
-    : 'rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-900 px-3 py-2 text-sm';
-
-  const buttonSolid = theme === 'dark'
-    ? 'rounded-lg bg-white text-gray-900 hover:bg-gray-100 px-3 py-2 text-sm'
-    : 'rounded-lg bg-slate-900 text-white hover:bg-slate-800 px-3 py-2 text-sm';
-  /* --- End Theme Updates --- */
-
-
-  /* ================= Form State ================= */
+  // --- 4. FORM STATE ---
   const [form, setForm] = useState({
     title: '',
     category: '',
@@ -85,6 +63,7 @@ export default function CreateTicketPage() {
   // Attachments (max 5)
   const [files, setFiles] = useState([]);
   const [fileError, setFileError] = useState('');
+  
   const onFilesChange = (e) => {
     const list = Array.from(e.target.files || []);
     if (list.length > 5) {
@@ -96,10 +75,9 @@ export default function CreateTicketPage() {
     }
   };
 
-  /* ================= Submit ================= */
+  // --- 5. SUBMISSION LOGIC ---
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState({ kind: '', text: '' });
-
   const UPLOAD_BASE = process.env.NEXT_PUBLIC_API_BASE?.trim() || '';
 
   const validate = () => {
@@ -152,14 +130,16 @@ export default function CreateTicketPage() {
           method: 'POST',
           body: fd,
         });
+        
         if (!upload.ok) {
+          // Try to parse error message
           const j = await upload.json().catch(() => ({}));
           throw new Error(j?.message || 'Ticket created, but file upload failed.');
         }
       }
 
       setMsg({ kind: 'success', text: `Success! Ticket #${newId} created.` });
-      setTimeout(() => router.replace('/client/dashboard'), 800);
+      setTimeout(() => router.replace('/client/dashboard'), 1000);
     } catch (e) {
       setMsg({ kind: 'error', text: e?.message || 'Failed to create ticket.' });
       setBusy(false);
@@ -168,28 +148,57 @@ export default function CreateTicketPage() {
 
   const goBack = () => router.back();
 
-  /* ================= Render ================= */
+  // --- 6. THEME STYLES ---
+  const pageBg =
+    theme === 'dark'
+      ? 'bg-gradient-to-br from-slate-900 via-blue-900 to-blue-700 text-white'
+      : 'bg-slate-50 text-slate-900';
+
+  const mobileHeaderCls =
+    theme === 'dark'
+      ? 'sticky top-0 z-30 flex h-16 items-center justify-between px-4 md:hidden bg-slate-900/70 border-b border-white/10 backdrop-blur'
+      : 'sticky top-0 z-30 flex h-16 items-center justify-between px-4 md:hidden bg-white/90 border-b border-slate-200 backdrop-blur';
+
+  const textMain = theme === 'dark' ? 'text-white' : 'text-slate-900';
+  const textSub  = theme === 'dark' ? 'text-white/80' : 'text-slate-600';
+
+  const inputWrap = theme === 'dark'
+    ? 'rounded-xl border border-white/20 bg-white/10 text-white placeholder-white/70 focus:ring-2 focus:ring-blue-300'
+    : 'rounded-xl border border-slate-300 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-slate-300';
+
+  const selectWrap = inputWrap;
+  const areaWrap   = inputWrap;
+
+  const buttonGhost = theme === 'dark'
+    ? 'rounded-lg border border-white/20 bg-white/10 hover:bg-white/15 text-white px-3 py-2 text-sm'
+    : 'rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-900 px-3 py-2 text-sm';
+
+  const buttonSolid = theme === 'dark'
+    ? 'rounded-lg bg-white text-gray-900 hover:bg-gray-100 px-3 py-2 text-sm'
+    : 'rounded-lg bg-slate-900 text-white hover:bg-slate-800 px-3 py-2 text-sm';
+
+  // Prevent rendering until theme is loaded
+  if (!isThemeLoaded) return <div className="min-h-screen bg-slate-900" />;
+
   return (
     <div className={`min-h-screen w-full ${pageBg}`}>
       
-      {/* --- 7. Added Sidebar --- */}
       <Sidebar 
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         isDesktopCollapsed={isDesktopCollapsed}
         onToggleDesktopCollapse={() => setIsDesktopCollapsed(prev => !prev)}
         theme={theme}
-        setTheme={setTheme}
-        onRefresh={refreshAll} // Pass the no-op refresh
+        setTheme={setTheme} // <-- Connected to localStorage wrapper
+        onRefresh={refreshAll}
         userType="client"
       />
 
-      {/* --- 8. Added Content Wrapper --- */}
       <div className={`flex flex-col min-h-screen transition-all duration-300 ease-in-out ${
         isDesktopCollapsed ? 'md:pl-20' : 'md:pl-64'
       }`}>
 
-        {/* --- 9. Replaced old <header> with Mobile-only Top Bar --- */}
+        {/* Mobile Header */}
         <header className={mobileHeaderCls}>
           <h1 className={`truncate text-lg sm:text-xl font-semibold ${textMain}`}>Create Ticket</h1>
           <button onClick={() => setSidebarOpen(true)} className={`p-2 ${buttonGhost}`}>
@@ -197,7 +206,7 @@ export default function CreateTicketPage() {
           </button>
         </header>
 
-        {/* --- 10. Updated <main> padding --- */}
+        {/* Main Form Area */}
         <main className="w-full max-w-[1000px] mx-auto px-4 sm:px-6 pt-4 md:pt-8 pb-10">
 
           {/* Page Title (Desktop-only) */}
@@ -208,7 +217,7 @@ export default function CreateTicketPage() {
             </p>
           </div>
 
-          {/* Message banner (Updated theme logic) */}
+          {/* Message banner */}
           {msg.text && (
             <div
               className={`mb-4 rounded-lg px-4 py-3 text-sm ${
@@ -229,7 +238,7 @@ export default function CreateTicketPage() {
             </div>
           )}
 
-          {/* Form card (Updated theme logic) */}
+          {/* Form card */}
           <div
             className={`rounded-2xl p-5 sm:p-6 ${
               theme === 'dark'
@@ -316,7 +325,7 @@ export default function CreateTicketPage() {
                 />
               </div>
 
-              {/* Attachments (Updated theme logic) */}
+              {/* Attachments */}
               <div>
                 <label className="block text-sm mb-1 opacity-90">Supporting Files / Screenshots (Up to 5)</label>
                 <input

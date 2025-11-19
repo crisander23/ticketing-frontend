@@ -6,75 +6,94 @@ import { fetcher } from '@/lib/fetcher';
 import { useAuthStore } from '@/store/useAuthStore';
 import Sidebar from '@/components/Sidebar';
 import { Menu } from 'lucide-react';
-import Link from 'next/link'; // <-- 1. Import Link
-import TicketCharts from '@/components/TicketCharts'; // <-- 2. Import TicketCharts
+import Link from 'next/link'; 
+import TicketCharts from '@/components/TicketCharts'; 
 
 export default function ClientDashboardPage() {
   const { user } = useAuthStore();
   const customerId = user?.user_id ?? null;
 
-  /* ============ Theme ============ */
+  // --- 1. THEME STATE WITH MEMORY (Synchronized) ---
   const [theme, setTheme] = useState('dark');
-  useEffect(() => {
-    const saved = typeof window !== 'undefined' ? localStorage.getItem('nea_theme') : null;
-    const t = saved || 'dark';
-    setTheme(t);
-    document.documentElement.setAttribute('data-theme', t);
-  }, []);
-  
-  useEffect(() => {
-    localStorage.setItem('nea_theme', theme);
-    document.documentElement.setAttribute('data-theme', theme);
-  }, [theme]);
+  const [isThemeLoaded, setIsThemeLoaded] = useState(false); // Prevents flash
 
-  /* ============ Data ============ */
-  const { data: tickets, error: ticketsError, isLoading: ticketsLoading, mutate } = useSWR(
+  useEffect(() => {
+    // Use 'ticketing_theme' to match Admin/Agent pages
+    const saved = localStorage.getItem('ticketing_theme');
+    if (saved) {
+      setTheme(saved);
+    }
+    setIsThemeLoaded(true);
+  }, []);
+
+  const handleThemeChange = (newTheme) => {
+    setTheme(newTheme);
+    localStorage.setItem('ticketing_theme', newTheme);
+  };
+
+  // --- 2. UI STATE ---
+  const [sidebarOpen, setSidebarOpen] = useState(false); 
+  const [isDesktopCollapsed, setIsDesktopCollapsed] = useState(false); 
+
+  // --- 3. DATA FETCHING ---
+  const { data: rawTickets, error: ticketsError, isLoading: ticketsLoading, mutate } = useSWR(
     customerId ? `/tickets/my?customer_id=${customerId}` : null,
     fetcher
   );
-  
-  // Sidebar state
-  const [sidebarOpen, setSidebarOpen] = useState(false); // For mobile
-  const [isDesktopCollapsed, setIsDesktopCollapsed] = useState(false); // For desktop
 
-  /* ============ Derived ============ */
+  /* ============ Data Normalization ============ */
+  // Clients should see 'resolved' tickets as 'in_progress'
+  const tickets = useMemo(() => {
+    if (!rawTickets) return [];
+    return rawTickets.map(t => {
+      const s = (t.status || 'open').toLowerCase();
+      // Map 'resolved' to 'in_progress'
+      const effectiveStatus = s === 'resolved' ? 'in_progress' : s;
+      return { ...t, status: effectiveStatus };
+    });
+  }, [rawTickets]);
+
+  /* ============ Derived Data ============ */
   const counts = useMemo(() => {
     const list = tickets || [];
-    const by = s => list.filter(t => (t.status || '').toLowerCase() === s).length;
-    return { all: list.length, open: by('open'), in_progress: by('in_progress'), resolved: by('resolved'), closed: by('closed') };
+    const by = s => list.filter(t => t.status === s).length;
+    return { 
+      all: list.length, 
+      open: by('open'), 
+      in_progress: by('in_progress'), 
+      closed: by('closed') 
+    };
   }, [tickets]);
   
-  // --- 3. Added Memos for Priority Lists ---
+  // --- Priority Lists ---
   const highPriority = useMemo(() => {
     if (!tickets) return [];
     return tickets
       .filter(t => 
         ['critical', 'high'].includes((t.impact || '').toLowerCase()) &&
-        !['resolved', 'closed'].includes((t.status || '').toLowerCase())
+        t.status !== 'closed' // Only show active tickets
       )
-      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at)) // Oldest first
-      .slice(0, 5); // Get top 5
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at)) 
+      .slice(0, 5); 
   }, [tickets]);
   
   const recentlyClosed = useMemo(() => {
     if (!tickets) return [];
     return tickets
-      .filter(t => ['resolved', 'closed'].includes((t.status || '').toLowerCase()))
-      // Sort by resolved_at, but fallback to updated_at if it's null
-      .sort((a, b) => new Date(b.resolved_at || b.updated_at) - new Date(a.resolved_at || a.updated_at)) // Most recent first
-      .slice(0, 5); // Get top 5
+      .filter(t => t.status === 'closed') 
+      .sort((a, b) => new Date(b.resolved_at || b.updated_at) - new Date(a.resolved_at || a.updated_at)) 
+      .slice(0, 5); 
   }, [tickets]);
-  // --- End Memos ---
   
   const refreshAll = useCallback(() => {
     mutate();
   }, [mutate]);
 
-  /* ============ UI bits (shared look) ============ */
+  /* ============ Theme Styles ============ */
   const pageBg =
     theme === 'dark'
       ? 'bg-gradient-to-br from-slate-900 via-blue-900 to-blue-700 text-white'
-      : 'bg-slate-100'; // <-- FIXED: Removed 'text-slate-900'
+      : 'bg-slate-100';
 
   const textMain = theme === 'dark' ? 'text-white' : 'text-slate-900';
   const textSub  = theme === 'dark' ? 'text-white/80' : 'text-slate-600';
@@ -84,13 +103,10 @@ export default function ClientDashboardPage() {
       ? 'rounded-lg border border-white/15 bg-transparent text-white hover:bg-white/10'
       : 'rounded-lg border border-slate-300 bg-white text-slate-900 hover:bg-slate-50';
 
-  // --- 4. Added cardBg style ---
   const cardBg = theme === 'dark'
     ? 'rounded-xl border border-white/15 bg-white/5'
     : 'rounded-xl border border-slate-200 bg-white'; 
   const cardTitle = theme === 'dark' ? 'text-white' : 'text-slate-900';
-  /* --- End Added style --- */
-
 
   /* KPI card */
   const Kpi = ({ label, value, color }) => {
@@ -110,6 +126,9 @@ export default function ClientDashboardPage() {
     );
   };
 
+  // Prevent rendering until theme is loaded
+  if (!isThemeLoaded) return <div className="min-h-screen bg-slate-900" />;
+
   return (
     <div className={`min-h-screen w-full ${pageBg}`}>
       <Sidebar 
@@ -118,7 +137,7 @@ export default function ClientDashboardPage() {
         isDesktopCollapsed={isDesktopCollapsed}
         onToggleDesktopCollapse={() => setIsDesktopCollapsed(prev => !prev)}
         theme={theme}
-        setTheme={setTheme}
+        setTheme={handleThemeChange} // <-- Connected to localStorage
         onRefresh={refreshAll}
         userType="client"
       />
@@ -141,22 +160,21 @@ export default function ClientDashboardPage() {
 
         <main className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 pt-4 md:pt-8 pb-8 space-y-6">
           
-          {/* Page Title (Desktop-only) */}
+          {/* Page Title */}
           <div className="hidden md:block">
             <h1 className={`text-3xl font-semibold ${textMain}`}>Client Dashboard</h1>
             <p className={`text-sm ${textSub}`}>Welcome, {user?.first_name || user?.email}.</p>
           </div>
           
           {/* KPIs */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-5 gap-3">
-            <Kpi label="Total" value={counts.all} color="slate" />
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <Kpi label="Total Tickets" value={counts.all} color="slate" />
             <Kpi label="Open" value={counts.open} color="blue" />
             <Kpi label="In Progress" value={counts.in_progress} color="amber" />
-            <Kpi label="Resolved" value={counts.resolved} color="violet" />
             <Kpi label="Closed" value={counts.closed} color="emerald" />
           </div>
 
-          {/* --- 5. Added Priority Lists --- */}
+          {/* Priority Lists */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <MiniTicketList 
               title="My High Priority Tickets" 
@@ -172,11 +190,10 @@ export default function ClientDashboardPage() {
             />
           </div>
 
-          {/* --- 6. Added Charts Section --- */}
+          {/* Charts Section */}
           <section>
             <h2 className={`text-xl font-semibold ${cardTitle} mb-3`}>My Ticket Analytics</h2>
             {ticketsLoading ? (
-              // --- FIXED: Replaced subTitle with textSub ---
               <div className={`rounded-xl p-6 text-center ${textSub} ${cardBg}`}>
                 Loading charts...
               </div>
@@ -194,7 +211,7 @@ export default function ClientDashboardPage() {
               <TicketCharts 
                 tickets={tickets || []} 
                 theme={theme}
-                // --- FIXED: Show only Status and Impact ---
+                // Show only Status and Impact for clients
                 show={{
                   status: true,
                   impact: true,
@@ -213,7 +230,7 @@ export default function ClientDashboardPage() {
   );
 }
 
-// --- 7. Added MiniTicketList Sub-component ---
+// --- MiniTicketList Sub-component ---
 function MiniTicketList({ title, tickets = [], theme, emptyText }) {
   const isDark = theme === 'dark';
   const cardBg = isDark ? 'rounded-xl border border-white/15 bg-white/5' : 'rounded-xl border border-slate-200 bg-white';
@@ -260,7 +277,6 @@ function MiniTicketList({ title, tickets = [], theme, emptyText }) {
                     </p>
                   </div>
                   <span className={`text-xs ${textSub} ml-auto shrink-0`}>
-                    {/* Show resolved date if available, otherwise created date */}
                     {new Date(t.resolved_at || t.created_at).toLocaleDateString()}
                   </span>
                 </div>

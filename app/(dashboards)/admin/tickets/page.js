@@ -13,17 +13,25 @@ import { Menu } from 'lucide-react';
 export default function AdminTicketsPage() {
   const { user } = useAuthStore();
 
-  /* THEME: 'dark' (gradient/dark) or 'light' */
-  const [theme, setTheme] = useState('dark'); // <-- Fixed
-  useEffect(() => {
-    const saved = localStorage.getItem('nea_theme') || 'dark'; // <-- Fixed
-    setTheme(saved);
-  }, []);
-  useEffect(() => {
-    localStorage.setItem('nea_theme', theme);
-  }, [theme]);
+  // --- 1. THEME STATE WITH MEMORY (Synchronized) ---
+  const [theme, setTheme] = useState('dark');
+  const [isThemeLoaded, setIsThemeLoaded] = useState(false); // Prevents flash
 
-  // UI state
+  useEffect(() => {
+    // Use 'ticketing_theme' to match Dashboard & History
+    const saved = localStorage.getItem('ticketing_theme'); 
+    if (saved) {
+      setTheme(saved);
+    }
+    setIsThemeLoaded(true);
+  }, []);
+
+  const handleThemeChange = (newTheme) => {
+    setTheme(newTheme);
+    localStorage.setItem('ticketing_theme', newTheme);
+  };
+
+  // --- 2. UI STATE ---
   const [openReg, setOpenReg] = useState(false);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // all|open|in_progress|resolved|closed
@@ -32,7 +40,7 @@ export default function AdminTicketsPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false); // For mobile
   const [isDesktopCollapsed, setIsDesktopCollapsed] = useState(false); // For desktop
 
-  // Data
+  // --- 3. DATA FETCHING ---
   const { data: tickets, error: ticketsError, isLoading: ticketsLoading, mutate: mutateTickets } =
     useSWR('/tickets', fetcher);
   // We still need to fetch users to populate the "assign agent" dropdown
@@ -94,35 +102,37 @@ export default function AdminTicketsPage() {
   }, [tickets, statusFilter, query]);
 
 
-  /* --- Theme Styles --- */
+  /* --- 4. THEME STYLES --- */
   const bgClass =
-    theme === 'dark' // <-- Fixed
+    theme === 'dark' 
       ? 'bg-gradient-to-br from-slate-900 via-blue-900 to-blue-700 text-white'
-      : 'bg-slate-10 text-slate-900';
+      : 'bg-slate-50 text-slate-900';
 
-  const cardTitle = theme === 'dark' ? 'text-white' : 'text-slate-900'; // <-- Fixed
-  const subTitle = theme === 'dark' ? 'text-white/80' : 'text-slate-600'; // <-- Fixed
+  const cardTitle = theme === 'dark' ? 'text-white' : 'text-slate-900';
+  const subTitle = theme === 'dark' ? 'text-white/80' : 'text-slate-600';
 
   const inputWrap =
-    theme === 'dark' // <-- Fixed
+    theme === 'dark' 
       ? 'rounded-xl bg-white/10 border border-white/15'
       : 'rounded-xl bg-white border border-slate-300';
 
   const inputField =
-    theme === 'dark' // <-- Fixed
+    theme === 'dark'
       ? 'bg-transparent text-white placeholder-white/60'
       : 'bg-transparent text-slate-900 placeholder-slate-400';
 
   const selectField =
-    theme === 'dark' // <-- Fixed
+    theme === 'dark'
       ? 'rounded-md border border-white/15 bg-transparent text-white'
       : 'rounded-md border border-slate-300 bg-white text-slate-900';
 
   const buttonGhost =
-    theme === 'dark' // <-- Fixed
+    theme === 'dark'
       ? 'rounded-lg border border-white/15 bg-transparent text-white hover:bg-white/10'
       : 'rounded-lg border border-slate-300 bg-white text-slate-900 hover:bg-slate-50';
-  /* --- End Theme Styles --- */
+
+  // Prevent rendering until theme is loaded
+  if (!isThemeLoaded) return <div className="min-h-screen bg-slate-900" />;
 
   return (
     <div className={`min-h-screen w-full ${bgClass}`}>
@@ -133,8 +143,7 @@ export default function AdminTicketsPage() {
         isDesktopCollapsed={isDesktopCollapsed}
         onToggleDesktopCollapse={() => setIsDesktopCollapsed(prev => !prev)}
         theme={theme}
-        setTheme={setTheme}
-        // onRegisterAgent={() => setOpenReg(true)} // <-- Removed this
+        setTheme={handleThemeChange} // <-- Connected to localStorage
         onRefresh={refreshAll}
         userType="admin"
       />
@@ -146,7 +155,7 @@ export default function AdminTicketsPage() {
 
         {/* --- Mobile-only Top Bar --- */}
         <header className={`sticky top-0 z-30 flex h-16 items-center justify-between px-4 md:hidden ${
-          theme === 'dark' // <-- Fixed
+          theme === 'dark'
             ? 'bg-slate-900/70 border-b border-white/10 backdrop-blur'
             : 'bg-white/90 border-b border-slate-200 backdrop-blur'
         }`}>
@@ -214,7 +223,7 @@ export default function AdminTicketsPage() {
             {ticketsError ? (
               <div
                 className={`${
-                  theme === 'dark' // <-- Fixed
+                  theme === 'dark'
                     ? 'rounded-lg border border-rose-400/30 bg-rose-900/25 text-rose-100'
                     : 'rounded-lg border border-rose-200 bg-rose-50 text-rose-700'
                 } px-4 py-3 text-sm`}
@@ -229,7 +238,7 @@ export default function AdminTicketsPage() {
                 onAssign={onAssign}
                 onStatusChange={onStatusChange}
                 inlineAction
-                surface={theme === 'dark' ? 'dark' : 'light'} // <-- Fixed
+                surface={theme === 'dark' ? 'dark' : 'light'} // Pass current theme
                 perPage={10}
                 showImpact
               />
