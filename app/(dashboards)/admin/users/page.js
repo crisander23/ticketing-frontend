@@ -1,3 +1,5 @@
+//app\(dashboards)\admin\users\page.js
+
 'use client';
 
 import useSWR from 'swr';

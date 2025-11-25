@@ -1,55 +1,62 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { Edit2, Check, X, AlertTriangle } from 'lucide-react';
 
-// --- deriveImpact function defined at the top ---
+// --- HELPER: Confirmation Modal ---
+function ConfirmationModal({ isOpen, title, message, onConfirm, onCancel, isDark }) {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 fade-in" onClick={(e) => e.stopPropagation()}>
+      <div className={`w-full max-w-sm rounded-xl border p-6 shadow-2xl transform transition-all scale-100 ${
+        isDark ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-900'
+      }`}>
+        <div className="flex items-start gap-4">
+          <div className={`p-2 rounded-full ${isDark ? 'bg-amber-500/10 text-amber-500' : 'bg-amber-100 text-amber-600'}`}>
+            <AlertTriangle size={24} />
+          </div>
+          <div className="flex-1">
+            <h3 className="text-lg font-semibold mb-1">{title}</h3>
+            <p className={`text-sm mb-6 ${isDark ? 'text-white/70' : 'text-slate-600'}`}>
+              {message}
+            </p>
+            <div className="flex justify-end gap-3">
+              <button 
+                onClick={onCancel} 
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  isDark ? 'hover:bg-white/10 text-white/80' : 'hover:bg-slate-100 text-slate-600'
+                }`}
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={onConfirm} 
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-500/20"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- HELPER: Derive Impact ---
 const deriveImpact = (row) => {
-  // Try common field names
-  let raw =
-    row.impact ??
-    row.impact_level ??
-    row.priority ??
-    row.severity ??
-    row.p ??
-    row.Impact ?? // if backend sends PascalCase
-    '';
-
-  // Some backends send numbers (0..4) or strings like "1"
+  let raw = row.impact ?? row.impact_level ?? row.priority ?? row.severity ?? row.p ?? row.Impact ?? '';
   if (raw === 0 || raw === 1 || raw === 2 || raw === 3 || raw === 4) raw = String(raw);
   if (typeof raw !== 'string') raw = String(raw ?? '');
-
   const v = raw.trim().toLowerCase();
-
-  // Map various aliases/numerics to standard buckets
-  if (!v) return ''; // truly unknown
-
-  // Numeric or p-levels
-  if (['0', 'p0', 'p-0'].includes(v)) return 'critical';
-  if (['1', 'p1', 'p-1'].includes(v)) return 'high';
-  if (['2', 'p2', 'p-2'].includes(v)) return 'medium';
-  if (['3', '4', 'p3', 'p4', 'p-3', 'p-4'].includes(v)) return 'low';
-
-  // Wordy aliases
-  if (['critical', 'severe', 'blocker', 'urgent', 'system down'].includes(v)) return 'critical';
-  if (['high', 'major', 'key', 'important'].includes(v)) return 'high';
-  if (['medium', 'moderate', 'normal'].includes(v)) return 'medium';
-  if (['low', 'minor', 'trivial'].includes(v)) return 'low';
-
-  // If they put full sentences, attempt quick keyword match
-  if (v.includes('critical')) return 'critical';
-  if (v.includes('high')) return 'high';
-  if (v.includes('medium')) return 'medium';
-  if (v.includes('low')) return 'low';
-  if (v.includes('p0')) return 'critical';
-  if (v.includes('p1')) return 'high';
-  if (v.includes('p2')) return 'medium';
-  if (v.includes('p3') || v.includes('p4')) return 'low';
-
-  return ''; // unknown
+  
+  if (['0', 'p0', 'p-0', 'critical', 'severe', 'blocker', 'urgent', 'system down'].some(x => v.includes(x))) return 'critical';
+  if (['1', 'p1', 'p-1', 'high', 'major', 'key', 'important'].some(x => v.includes(x))) return 'high';
+  if (['2', 'p2', 'p-2', 'medium', 'moderate', 'normal'].some(x => v.includes(x))) return 'medium';
+  if (['3', '4', 'p3', 'p4', 'low', 'minor', 'trivial'].some(x => v.includes(x))) return 'low';
+  return ''; 
 };
-
 
 export default function TicketTable({
   rows = [],
@@ -57,9 +64,9 @@ export default function TicketTable({
   agentOptions = [],
   onAssign,
   onStatusChange,
-  onRequestResolve,       // for agent "resolved" modal
+  onRequestResolve, 
   inlineAction = false,
-  surface = 'dark',         // 'dark' | 'light'
+  surface = 'dark', 
   perPage = 10,
   showImpact = true,
   agentEditable = true,
@@ -67,111 +74,113 @@ export default function TicketTable({
   const router = useRouter(); 
   const isPrivileged = role === 'admin' || role === 'agent';
 
-  // --- 1. REMOVED FILTER STATE ---
-  // const [filters, setFilters] = useState(...);
-  
-  // --- 2. REVERTED FILTEREDROWS TO USE 'rows' ---
-  const filteredRows = useMemo(() => {
-    return rows;
-  }, [rows]);
+  // --- 1. FILTER LOGIC ---
+  const filteredRows = useMemo(() => rows, [rows]);
 
-
-  // pagination
+  // --- 2. PAGINATION ---
   const [page, setPage] = useState(1);
-  // --- 3. PAGINATION BASED ON FILTERED ROWS ---
-  const total = filteredRows.length; // This now uses the memo above
+  const total = filteredRows.length; 
   const totalPages = Math.max(1, Math.ceil(total / perPage));
   const pageRows = useMemo(() => {
     const start = (page - 1) * perPage;
     return filteredRows.slice(start, start + perPage);
   }, [filteredRows, page, perPage]);
 
-  // inline edit
+  // --- 3. EDIT STATE ---
   const [editRowId, setEditRowId] = useState(null);
   const [draftAgent, setDraftAgent] = useState('');
   const [draftStatus, setDraftStatus] = useState('open');
   const [saving, setSaving] = useState(false);
+  
+  // Confirmation Modal State
+  const [confirmModal, setConfirmModal] = useState(null);
 
   const beginEdit = (row) => {
     setEditRowId(row.ticket_id);
     setDraftAgent(row.agent_id ?? '');
     setDraftStatus((row.status || 'open').toLowerCase());
   };
-  const cancelEdit = () => { setEditRowId(null); setSaving(false); };
 
-  // --- MODIFIED: Updated saveEdit logic ---
-  const saveEdit = async (row) => {
+  const cancelEdit = () => { 
+    setEditRowId(null); 
+    setSaving(false); 
+  };
+
+  // --- 4. SAVE LOGIC ---
+  const requestSaveEdit = (row) => {
+    // Check values
+    const finalAgentId = draftAgent ? parseInt(draftAgent, 10) : null;
+    const agentDidChange = agentEditable && (finalAgentId ?? null) !== (row.agent_id ?? null);
+    let finalStatus = draftStatus;
+
+    // Auto-status logic
+    if (agentDidChange && finalStatus === 'open') finalStatus = 'in_progress';
+
+    const statusDidChange = finalStatus !== (row.status || 'open');
+
+    // If nothing changed, just cancel
+    if (!agentDidChange && !statusDidChange) {
+        cancelEdit();
+        return;
+    }
+
+    setConfirmModal({
+        isOpen: true,
+        title: 'Save Changes?',
+        message: `You are about to update Ticket #${row.ticket_id}. Continue?`,
+        action: () => executeSave(row, finalAgentId, finalStatus, agentDidChange, statusDidChange)
+    });
+  };
+
+  const executeSave = async (row, finalAgentId, finalStatus, agentDidChange, statusDidChange) => {
+    setConfirmModal(null); // Close modal
     try {
       setSaving(true);
 
-      // 1. Get final values from dropdowns
-      const finalAgentId = draftAgent ? parseInt(draftAgent, 10) : null;
-      let finalStatus = draftStatus;
-
-      const agentDidChange = agentEditable && (finalAgentId ?? null) !== (row.agent_id ?? null);
-      
-      // 2. NEW LOGIC: If agent changed AND status was 'open', force status to 'in_progress'
-      if (agentDidChange && finalStatus === 'open') {
-        finalStatus = 'in_progress';
-      }
-
-      // 3. Check for resolution modal (using the *final* status)
+      // Check for resolution modal logic
       if (typeof onRequestResolve === 'function' && finalStatus === 'resolved') {
         setEditRowId(null);
         setSaving(false);
-        onRequestResolve(row.ticket_id); // This will handle the API call
-        return; // Stop here, modal will take over
+        onRequestResolve(row.ticket_id); 
+        return; 
       }
 
-      // 4. Send API calls
       const ops = [];
-      
-      // Send agent update if it changed
       if (agentDidChange && typeof onAssign === 'function') {
         ops.push(onAssign(row.ticket_id, finalAgentId));
       }
-      
-      // Send status update if the *final* status is different from original
-      if (finalStatus !== (row.status || 'open') && typeof onStatusChange === 'function') {
+      if (statusDidChange && typeof onStatusChange === 'function') {
         ops.push(onStatusChange(row.ticket_id, finalStatus));
       }
 
       await Promise.all(ops);
       setEditRowId(null);
-    } finally { setSaving(false); }
+    } finally { 
+      setSaving(false); 
+    }
   };
-  // --- END MODIFIED BLOCK ---
 
-  // theme tokens
+  // --- THEME ---
   const isDark = surface === 'dark';
   const tone = {
     tableWrap: `overflow-hidden rounded-xl border ${isDark ? 'border-white/15 bg-white/5' : 'border-slate-200 bg-white'}`,
     head: isDark ? 'bg-white/10 text-white/90' : 'bg-slate-50 text-slate-700',
     th: 'px-4 py-3 text-left text-xs uppercase font-semibold',
-    
-    // --- 4. REMOVED FILTER STYLES ---
-    // filterCell: ...,
-    // filterSelect: ...,
-    
     rowHover: isDark ? 'hover:bg-white/10' : 'hover:bg-slate-50',
     td: `px-4 py-3 ${isDark ? 'text-white/90' : 'text-slate-800'}`,
     sub: isDark ? 'text-white/80' : 'text-slate-700',
     pale: isDark ? 'text-white/70' : 'text-slate-500',
-    input: `rounded-md border px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 ${
-      isDark ? 'border-white/15 bg-transparent text-white focus:ring-blue-500' : 'border-slate-300 bg-white text-slate-900 focus:ring-slate-300'
-    }`,
+    // Updated input style to match UserTable edit mode
+    input: `w-full rounded border px-2 py-1 text-sm ${
+        isDark ? 'bg-black/40 border-white/20 text-white' : 'bg-white border-slate-300 text-slate-900'
+    } focus:outline-none focus:ring-1 focus:ring-blue-500`,
     paginateBtn: `rounded-md px-2 py-1 ${
       isDark ? 'border border-white/15 bg-transparent text-white hover:bg-white/10 disabled:opacity-50' :
                'border border-slate-300 bg-white text-slate-900 hover:bg-slate-50 disabled:opacity-50'
     }`,
-    actionBtn: `rounded-lg px-3 py-1.5 text-xs font-semibold ${
-      isDark ? 'border border-white/15 bg-transparent text-white hover:bg-white/10' :
-               'border border-slate-300 bg-white text-slate-900 hover:bg-slate-50'
-    }`,
     footer: `flex items-center justify-between p-3 border-t ${isDark ? 'border-white/10 text-white/80' : 'border-slate-200 text-slate-600'} text-xs`,
   };
 
-  // SAFE colgroup (no whitespace text nodes)
   const colDefs = useMemo(() => ([
     <col key="id" className="w-[90px]" />,
     <col key="title" />,
@@ -183,15 +192,20 @@ export default function TicketTable({
     isPrivileged ? <col key="action" className="w-[120px]" /> : null,
   ].filter(Boolean)), [isPrivileged, showImpact]);
 
-  // --- 6. REMOVED FilterInput/FilterSelect COMPONENTS ---
-  
   return (
     <div className={tone.tableWrap}>
+      
+      {/* --- MODAL --- */}
+      <ConfirmationModal 
+        isOpen={confirmModal?.isOpen}
+        title={confirmModal?.title}
+        message={confirmModal?.message}
+        onConfirm={confirmModal?.action}
+        onCancel={() => setConfirmModal(null)}
+        isDark={isDark}
+      />
+
       <div className="overflow-x-auto">
-        {/* --- 
-          FIX: Added 'min-w-[700px]' to force horizontal scrolling on mobile.
-          REMOVED 'table-fixed' to let columns size themselves.
-        --- */}
         <table className="w-full min-w-[700px] table-auto text-sm">
           <colgroup>{colDefs}</colgroup>
 
@@ -206,9 +220,6 @@ export default function TicketTable({
               <th className={`${tone.th} hidden sm:table-cell`}>Created</th>
               {isPrivileged && <th className={tone.th}>Action</th>}
             </tr>
-            
-            {/* --- 7. REMOVED FILTER ROW --- */}
-            
           </thead>
 
           <tbody className={isDark ? 'divide-y divide-white/10' : 'divide-y divide-slate-200'}>
@@ -229,15 +240,11 @@ export default function TicketTable({
               const isEditing = editRowId === t.ticket_id;
               const impactNorm = deriveImpact(t); 
 
-              // --- MODIFIED: Client-side status display logic ---
               const trueStatus = (t.status || 'open').toLowerCase();
               let displayStatus = trueStatus;
-          
-              // If role is client, map 'resolved' to 'in_progress'
               if (role === 'client' && trueStatus === 'resolved') {
                 displayStatus = 'in_progress';
               }
-              // --- END MODIFIED ---
 
               return (
                 <tr 
@@ -251,14 +258,12 @@ export default function TicketTable({
                     </span>
                   </td>
 
-                  {/* --- FIXED: Added whitespace-nowrap to title --- */}
                   <td className={`${tone.td} whitespace-nowrap`}>{t.title || '(no title)'}</td>
 
                   {isPrivileged && (
                     <td className={`${tone.td} hidden md:table-cell whitespace-nowrap`}>{clientName || '—'}</td>
                   )}
 
-                  {/* --- FIXED: Added whitespace-nowrap to agent --- */}
                   <td className={`${tone.td} whitespace-nowrap`}>
                     {inlineAction && isEditing && agentEditable ? (
                       <select
@@ -284,18 +289,16 @@ export default function TicketTable({
                   <td className={`${tone.td} whitespace-nowrap`}>
                     {inlineAction && isEditing ? (
                       <select
-                        value={draftStatus} // This uses the real status for editing
+                        value={draftStatus}
                         onChange={(e) => setDraftStatus(e.target.value)}
                         onClick={(e) => e.stopPropagation()} 
                         className={tone.input}
                       >
-                        {/* Admin/Agent can see all statuses in dropdown */}
                         {['open','in_progress','resolved','closed'].map(s => (
                           <option className="text-black" key={s} value={s}>{s}</option>
                         ))}
                       </select>
                     ) : (
-                      // This uses the new mapped status for display
                       <StatusSolid value={displayStatus} />
                     )}
                   </td>
@@ -308,27 +311,36 @@ export default function TicketTable({
                         isEditing ? (
                           <div className="flex items-center gap-2">
                             <button 
-                              onClick={(e) => { e.stopPropagation(); saveEdit(t); }} 
+                              onClick={(e) => { e.stopPropagation(); requestSaveEdit(t); }} 
                               disabled={saving}
-                              className={isDark ? 'rounded-lg bg-white text-gray-900 px-3 py-1.5 text-xs hover:bg-gray-100 disabled:opacity-60'
-                                              : 'rounded-lg bg-slate-900 text-white px-3 py-1.5 text-xs hover:bg-slate-800 disabled:opacity-60'}>
-                              {saving ? 'Saving…' : 'Save'}
+                              className="p-1.5 rounded bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors" 
+                              title="Save Changes"
+                            >
+                              <Check size={16} />
                             </button>
                             <button 
                               onClick={(e) => { e.stopPropagation(); cancelEdit(); }} 
                               disabled={saving}
-                              className={isDark ? 'rounded-lg border border-white/15 bg-transparent text-white hover:bg-white/10 px-3 py-1.5 text-xs'
-                                              : 'rounded-lg border border-slate-300 bg-white text-slate-900 hover:bg-slate-50 px-3 py-1.5 text-xs'}>
-                              Cancel
+                              className="p-1.5 rounded bg-rose-500/10 text-rose-500 hover:bg-rose-500/20 border border-rose-500/20 transition-colors" 
+                              title="Cancel"
+                            >
+                              <X size={16} />
                             </button>
                           </div>
                         ) : (
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); beginEdit(t); }}
-                            className={isDark ? 'rounded-lg border border-white/15 bg-transparent text-white hover:bg-white/10 px-3 py-1.5 text-xs'
-                                            : 'rounded-lg border border-slate-300 bg-white text-slate-900 hover:bg-slate-50 px-3 py-1.5 text-xs'}>
-                            Action
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button 
+                                onClick={(e) => { e.stopPropagation(); beginEdit(t); }}
+                                className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md border transition-colors ${
+                                    isDark 
+                                        ? 'border-white/20 hover:bg-white/10 text-white' 
+                                        : 'border-slate-300 hover:bg-slate-100 text-slate-700'
+                                } disabled:opacity-50`}
+                            >
+                                <Edit2 size={12} />
+                                Edit
+                            </button>
+                          </div>
                         )
                       ) : (
                         <span className={`${tone.pale} text-xs`}>—</span>
@@ -342,7 +354,6 @@ export default function TicketTable({
         </table>
       </div>
 
-      {/* Pagination */}
       <div className={tone.footer}>
         <div>
           Showing <b>{pageRows.length}</b> of <b>{total}</b> — Page {page}/{totalPages}
@@ -375,27 +386,16 @@ function StatusSolid({ value }) {
   );
 }
 
-/* ===== Robust Impact badge (now recognizes many encodings) ===== */
+/* ===== Impact Badge ===== */
 function ImpactBadge({ value, dark }) {
   const v = (value || '').toString().toLowerCase();
-
-  // default: visible neutral chip (no more translucent '—')
   let label = value ? value.toUpperCase() : 'UNKNOWN';
   let cls = dark ? 'bg-white text-gray-900' : 'bg-slate-300 text-slate-900';
 
-  if (v === 'critical') {
-    cls = 'bg-rose-600 text-white';
-    label = 'CRITICAL';
-  } else if (v === 'high') {
-    cls = 'bg-red-500 text-white';
-    label = 'HIGH';
-  } else if (v === 'medium') {
-    cls = 'bg-amber-500 text-slate-900';
-    label = 'MEDIUM';
-  } else if (v === 'low') {
-    cls = 'bg-emerald-600 text-white';
-    label = 'LOW';
-  }
+  if (v === 'critical') { cls = 'bg-rose-600 text-white'; label = 'CRITICAL'; } 
+  else if (v === 'high') { cls = 'bg-red-500 text-white'; label = 'HIGH'; } 
+  else if (v === 'medium') { cls = 'bg-amber-500 text-slate-900'; label = 'MEDIUM'; } 
+  else if (v === 'low') { cls = 'bg-emerald-600 text-white'; label = 'LOW'; }
 
   return (
     <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${cls}`}>

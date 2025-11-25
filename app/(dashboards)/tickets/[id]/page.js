@@ -106,12 +106,18 @@ export default function TicketDetailPage() {
     localStorage.setItem('ticketing_theme', newTheme);
   };
 
-  // --- 2. ROLE LOGIC ---
+  // --- 2. ROLE LOGIC (UPDATED) ---
   const rolePath = routeForUser(user);
-  const isAdmin = rolePath === '/admin/dashboard';
+  
+  const isSuperAdmin = rolePath === '/superadmin/dashboard';
+  // SuperAdmin should have all Admin privileges on this page (assigning agents, viewing audit logs)
+  const isAdmin = rolePath === '/admin/dashboard' || isSuperAdmin; 
   const isAgent = rolePath === '/agent/dashboard';
+  
   const canManage = isAdmin || isAgent;
-  const userType = isAdmin ? 'admin' : isAgent ? 'agent' : 'client';
+  
+  // Determine the correct Sidebar type
+  const userType = isSuperAdmin ? 'superadmin' : (rolePath === '/admin/dashboard' ? 'admin' : (isAgent ? 'agent' : 'client'));
 
   // --- 3. DATA FETCHING ---
   const { data: rawTicket, isLoading, error, mutate } = useSWR(
@@ -122,6 +128,7 @@ export default function TicketDetailPage() {
     canManage && id ? `/tickets/${id}/notes` : null,
     fetcher
   );
+  // Admin/SuperAdmin needs user list for assignment dropdown
   const { data: allUsers } = useSWR(isAdmin ? '/admin/users' : null, fetcher);
 
   const normalized = useMemo(() => normalizeTicket(rawTicket), [rawTicket]);
@@ -340,12 +347,6 @@ export default function TicketDetailPage() {
     pos: normalized.customer_position || '-',
   };
 
-  const trueStatus = (normalized.status || 'open').toLowerCase();
-  let displayStatus = trueStatus;
-  if (!canManage && trueStatus === 'resolved') {
-    displayStatus = 'in_progress';
-  }
-
   // --- 9. JSX ---
   return (
     <div className={`min-h-screen w-full ${pageBg}`}>
@@ -357,7 +358,7 @@ export default function TicketDetailPage() {
         theme={theme}
         setTheme={handleThemeChange} // Connected to localStorage wrapper
         onRefresh={refreshAll}
-        userType={userType}
+        userType={userType} // <-- Now correctly passes 'superadmin' if needed
       />
       
       <div className={`flex flex-col min-h-screen transition-all duration-300 ease-in-out ${

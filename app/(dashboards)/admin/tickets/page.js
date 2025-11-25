@@ -1,3 +1,5 @@
+//app\(dashboards)\admin\tickets\page.js
+
 'use client';
 
 import useSWR from 'swr';

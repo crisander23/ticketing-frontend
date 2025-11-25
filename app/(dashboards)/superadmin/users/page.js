@@ -1,0 +1,202 @@
+'use client';
+
+import useSWR from 'swr';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import UserTable from '@/components/UserTable';
+import RegisterUsersModal from '@/components/RegisterUsersModal'; 
+import { fetcher } from '@/lib/fetcher';
+import { apiFetch } from '@/lib/api'; 
+import { useAuthStore } from '@/store/useAuthStore';
+import Sidebar from '@/components/Sidebar'; 
+import { Menu, UserPlus } from 'lucide-react';
+
+export default function SuperAdminUsersPage() {
+  const { user } = useAuthStore();
+
+  // --- Theme ---
+  const [theme, setTheme] = useState('dark'); 
+  const [isThemeLoaded, setIsThemeLoaded] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('ticketing_theme'); 
+    if (saved) setTheme(saved);
+    setIsThemeLoaded(true);
+  }, []);
+
+  const handleThemeChange = (newTheme) => {
+    setTheme(newTheme);
+    localStorage.setItem('ticketing_theme', newTheme);
+  };
+
+  // --- UI ---
+  const [openReg, setOpenReg] = useState(false);
+  const [query, setQuery] = useState('');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isDesktopCollapsed, setIsDesktopCollapsed] = useState(false);
+  const [busyId, setBusyId] = useState(null); 
+
+  // --- Data ---
+  const { data: users, error: usersError, isLoading: usersLoading, mutate: mutateUsers } =
+    useSWR('/admin/users', fetcher);
+
+  const refreshAll = useCallback(() => mutateUsers(), [mutateUsers]);
+
+  const filteredUsers = useMemo(() => {
+    let list = users || [];
+    if (query.trim()) {
+      const q = query.trim().toLowerCase();
+      list = list.filter((u) =>
+        [u.first_name, u.last_name, u.email, u.user_type, u.status, u.user_id]
+          .map((v) => (v ?? '').toString().toLowerCase())
+          .some((s) => s.includes(q))
+      );
+    }
+    return list;
+  }, [users, query]);
+
+  // --- Handle Status Toggle ---
+  const handleToggleStatus = async (targetUser) => {
+    if (busyId) return;
+    
+    // We only keep this critical self-check. 
+    // The "Are you sure" confirmation is now handled by the UserTable UI.
+    if (targetUser.user_id === user.user_id) {
+        alert("You cannot deactivate your own account.");
+        return;
+    }
+
+    const newStatus = targetUser.status === 'active' ? 'inactive' : 'active';
+
+    setBusyId(targetUser.user_id);
+    try {
+        await apiFetch(`/admin/users/${targetUser.user_id}`, {
+            method: 'PUT',
+            body: { 
+                status: newStatus,
+                actor_id: user.user_id 
+            }
+        });
+        await mutateUsers(); 
+    } catch (e) {
+        alert(e.message || 'Failed to update user status');
+    } finally {
+        setBusyId(null);
+    }
+  };
+
+  // --- NEW: Handle Role Change ---
+  const handleRoleChange = async (targetUser, newRole) => {
+    if (busyId) return;
+
+    // Self-check only.
+    // Removed: if (!confirm(...)) return; 
+    if (targetUser.user_id === user.user_id) {
+      alert("You cannot change your own role.");
+      return;
+    }
+
+    setBusyId(targetUser.user_id);
+    try {
+      await apiFetch(`/admin/users/${targetUser.user_id}`, {
+        method: 'PUT',
+        body: { 
+          user_type: newRole,
+          actor_id: user.user_id 
+        }
+      });
+      await mutateUsers();
+    } catch (e) {
+      alert(e.message || 'Failed to update user role');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  // --- Styles ---
+  const bgClass = theme === 'dark' ? 'bg-gradient-to-br from-slate-900 via-blue-900 to-blue-700 text-white' : 'bg-slate-50 text-slate-900';
+  const cardTitle = theme === 'dark' ? 'text-white' : 'text-slate-900'; 
+  const subTitle = theme === 'dark' ? 'text-white/80' : 'text-slate-600'; 
+  const inputWrap = theme === 'dark' ? 'rounded-xl bg-white/10 border border-white/15' : 'rounded-xl bg-white border border-slate-300';
+  const inputField = theme === 'dark' ? 'bg-transparent text-white placeholder-white/60' : 'bg-transparent text-slate-900 placeholder-slate-400';
+  const buttonGhost = theme === 'dark' ? 'rounded-lg border border-white/15 bg-transparent text-white hover:bg-white/10' : 'rounded-lg border border-slate-300 bg-white text-slate-900 hover:bg-slate-50';
+  
+  if (!isThemeLoaded) return <div className="min-h-screen bg-slate-900" />;
+
+  return (
+    <div className={`min-h-screen w-full ${bgClass}`}>
+      <Sidebar 
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        isDesktopCollapsed={isDesktopCollapsed}
+        onToggleDesktopCollapse={() => setIsDesktopCollapsed(prev => !prev)}
+        theme={theme}
+        setTheme={handleThemeChange}
+        onRefresh={refreshAll}
+        userType="superadmin"
+      />
+
+      <div className={`flex flex-col min-h-screen transition-all duration-300 ease-in-out ${isDesktopCollapsed ? 'md:pl-20' : 'md:pl-64'}`}>
+
+        <header className={`sticky top-0 z-30 flex h-16 items-center justify-between px-4 md:hidden ${theme === 'dark' ? 'bg-slate-900/70 border-b border-white/10 backdrop-blur' : 'bg-white/90 border-b border-slate-200 backdrop-blur'}`}>
+          <h1 className={`text-lg font-semibold ${cardTitle}`}>User Management</h1>
+          <button onClick={() => setSidebarOpen(true)} className={`p-2 ${buttonGhost}`}><Menu className="h-5 w-5" /></button>
+        </header>
+
+        <main className="w-full px-4 sm:px-6 pt-4 md:pt-8 pb-8 space-y-6">
+          <div className="hidden md:flex md:items-center md:justify-between">
+            <div>
+              <h1 className={`text-3xl font-semibold ${cardTitle}`}>System User Management</h1>
+              <p className={`text-sm ${subTitle}`}>Manage Admins, Agents, and Clients</p>
+            </div>
+            <div className="flex items-center gap-3">
+                <button 
+                    onClick={() => setOpenReg(true)} 
+                    className={`${buttonGhost} flex items-center gap-2 px-3 py-2 text-sm font-medium`}
+                >
+                    <UserPlus className="h-4 w-4" />
+                    <span>Register User</span>
+                </button>
+            </div>
+          </div>
+
+          <div className={`${inputWrap} px-3 py-2`}>
+            <input
+              type="search"
+              placeholder="Search users..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className={`w-full rounded-md px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 ${inputField}`}
+            />
+          </div>
+
+          <section className="space-y-3">
+            <div>
+              <h2 className={`text-lg font-semibold ${cardTitle}`}>All System Users</h2>
+            </div>
+            {usersError ? (
+              <div className="text-red-400">Failed to load users.</div>
+            ) : (
+              <UserTable 
+                rows={filteredUsers || []} 
+                perPage={10} 
+                surface={theme === 'dark' ? 'dark' : 'light'} 
+                onToggleStatus={handleToggleStatus}
+                onChangeRole={handleRoleChange}
+                busyId={busyId}
+                isSuperAdmin={true}
+              />
+            )}
+          </section>
+        </main>
+      </div>
+
+      {/* Use the NEW Modal here */}
+      <RegisterUsersModal
+          open={openReg}
+          onClose={() => setOpenReg(false)}
+          onSuccess={() => mutateUsers()}
+          theme={theme}
+        />
+    </div>
+  );
+}

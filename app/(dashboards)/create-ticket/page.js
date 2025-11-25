@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import { redirect, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/useAuthStore';
 import { apiFetch } from '@/lib/api';
 import Sidebar from '@/components/Sidebar';
@@ -12,44 +12,50 @@ export default function CreateTicketPage() {
   const router = useRouter();
 
   // --- 1. AUTH GUARD ---
-  // Ideally, this check should happen in middleware, but client-side check helps too.
-  if (user && user.user_type !== 'client') {
-     // Optional: Redirect agents/admins away or let them stay
-     // router.replace('/admin/dashboard');
-  }
-  
   useEffect(() => {
     if (!user) router.replace('/login');
   }, [user, router]);
 
-  if (!user) return null; // Avoid flash of content
-
-  // --- 2. THEME STATE WITH MEMORY (Synchronized) ---
+  // --- 2. THEME STATE ---
   const [theme, setTheme] = useState('dark');
   const [isThemeLoaded, setIsThemeLoaded] = useState(false);
 
   useEffect(() => {
-    // Use 'ticketing_theme' to match the Client Dashboard
     const saved = localStorage.getItem('ticketing_theme');
-    if (saved) {
-      setTheme(saved);
-    }
+    if (saved) setTheme(saved);
     setIsThemeLoaded(true);
   }, []);
 
   useEffect(() => {
-    if (isThemeLoaded) {
-      localStorage.setItem('ticketing_theme', theme);
-    }
+    if (isThemeLoaded) localStorage.setItem('ticketing_theme', theme);
   }, [theme, isThemeLoaded]);
 
   // --- 3. SIDEBAR STATE ---
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isDesktopCollapsed, setIsDesktopCollapsed] = useState(false);
-  
-  const refreshAll = useCallback(() => {}, []); // No-op for create page
+  const refreshAll = useCallback(() => {}, []); 
 
-  // --- 4. FORM STATE ---
+  // --- 4. DATA FETCHING (NEW) ---
+  const [categories, setCategories] = useState([]);
+  const [impacts, setImpacts] = useState([]);
+
+  useEffect(() => {
+    const fetchOptions = async () => {
+      try {
+        // Fetch from the new API route we just created
+        const data = await apiFetch('/tickets/options'); 
+        if (data) {
+          setCategories(data.categories || []);
+          setImpacts(data.impacts || []);
+        }
+      } catch (err) {
+        console.error('Failed to load ticket options:', err);
+      }
+    };
+    if (user) fetchOptions(); // Only fetch if logged in
+  }, [user]);
+
+  // --- 5. FORM STATE ---
   const [form, setForm] = useState({
     title: '',
     category: '',
@@ -57,7 +63,10 @@ export default function CreateTicketPage() {
     description: '',
     requested_by_date: '',
   });
+
   const setField = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  
+  // Note: Ensure your Database string matches this exactly for the date field to show
   const isFeature = useMemo(() => form.category === 'New Feature Request', [form.category]);
 
   // Attachments (max 5)
@@ -75,7 +84,7 @@ export default function CreateTicketPage() {
     }
   };
 
-  // --- 5. SUBMISSION LOGIC ---
+  // --- 6. SUBMISSION LOGIC ---
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState({ kind: '', text: '' });
   const UPLOAD_BASE = process.env.NEXT_PUBLIC_API_BASE?.trim() || '';
@@ -100,7 +109,7 @@ export default function CreateTicketPage() {
     setMsg({ kind: 'info', text: 'Creating ticket…' });
 
     try {
-      // STEP 1 — Create ticket (JSON)
+      // STEP 1 — Create ticket
       const payload = {
         customer_id: user.user_id,
         title: form.title.trim(),
@@ -114,7 +123,7 @@ export default function CreateTicketPage() {
       const newId = ticketRes?.ticket_id || ticketRes?.id || ticketRes?.ticketId;
       if (!newId) throw new Error('Ticket created but no ticket ID returned.');
 
-      // STEP 2 — Upload attachments (if any)
+      // STEP 2 — Upload attachments
       if (files.length > 0) {
         setMsg({ kind: 'info', text: 'Uploading attachments…' });
 
@@ -126,13 +135,9 @@ export default function CreateTicketPage() {
           ? `${UPLOAD_BASE.replace(/\/$/, '')}/tickets/${newId}/upload`
           : `/api/tickets/${newId}/upload`;
 
-        const upload = await fetch(uploadUrl, {
-          method: 'POST',
-          body: fd,
-        });
+        const upload = await fetch(uploadUrl, { method: 'POST', body: fd });
         
         if (!upload.ok) {
-          // Try to parse error message
           const j = await upload.json().catch(() => ({}));
           throw new Error(j?.message || 'Ticket created, but file upload failed.');
         }
@@ -148,14 +153,14 @@ export default function CreateTicketPage() {
 
   const goBack = () => router.back();
 
-  // --- 6. THEME STYLES ---
-  const pageBg =
-    theme === 'dark'
+  // --- 7. STYLES ---
+  if (!user || !isThemeLoaded) return null;
+
+  const pageBg = theme === 'dark'
       ? 'bg-gradient-to-br from-slate-900 via-blue-900 to-blue-700 text-white'
       : 'bg-slate-50 text-slate-900';
 
-  const mobileHeaderCls =
-    theme === 'dark'
+  const mobileHeaderCls = theme === 'dark'
       ? 'sticky top-0 z-30 flex h-16 items-center justify-between px-4 md:hidden bg-slate-900/70 border-b border-white/10 backdrop-blur'
       : 'sticky top-0 z-30 flex h-16 items-center justify-between px-4 md:hidden bg-white/90 border-b border-slate-200 backdrop-blur';
 
@@ -165,7 +170,7 @@ export default function CreateTicketPage() {
   const inputWrap = theme === 'dark'
     ? 'rounded-xl border border-white/20 bg-white/10 text-white placeholder-white/70 focus:ring-2 focus:ring-blue-300'
     : 'rounded-xl border border-slate-300 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-slate-300';
-
+    
   const selectWrap = inputWrap;
   const areaWrap   = inputWrap;
 
@@ -177,9 +182,6 @@ export default function CreateTicketPage() {
     ? 'rounded-lg bg-white text-gray-900 hover:bg-gray-100 px-3 py-2 text-sm'
     : 'rounded-lg bg-slate-900 text-white hover:bg-slate-800 px-3 py-2 text-sm';
 
-  // Prevent rendering until theme is loaded
-  if (!isThemeLoaded) return <div className="min-h-screen bg-slate-900" />;
-
   return (
     <div className={`min-h-screen w-full ${pageBg}`}>
       
@@ -189,7 +191,7 @@ export default function CreateTicketPage() {
         isDesktopCollapsed={isDesktopCollapsed}
         onToggleDesktopCollapse={() => setIsDesktopCollapsed(prev => !prev)}
         theme={theme}
-        setTheme={setTheme} // <-- Connected to localStorage wrapper
+        setTheme={setTheme}
         onRefresh={refreshAll}
         userType="client"
       />
@@ -206,10 +208,9 @@ export default function CreateTicketPage() {
           </button>
         </header>
 
-        {/* Main Form Area */}
+        {/* Main Content */}
         <main className="w-full max-w-[1000px] mx-auto px-4 sm:px-6 pt-4 md:pt-8 pb-10">
 
-          {/* Page Title (Desktop-only) */}
           <div className="hidden md:block mb-4">
             <h1 className={`text-3xl font-semibold ${textMain}`}>Create New Ticket</h1>
             <p className={`text-sm ${textSub}`}>
@@ -217,36 +218,25 @@ export default function CreateTicketPage() {
             </p>
           </div>
 
-          {/* Message banner */}
+          {/* Message Banner */}
           {msg.text && (
-            <div
-              className={`mb-4 rounded-lg px-4 py-3 text-sm ${
+            <div className={`mb-4 rounded-lg px-4 py-3 text-sm ${
                 msg.kind === 'error'
-                  ? theme === 'dark'
-                    ? 'border border-red-400/30 bg-red-900/25 text-red-100'
-                    : 'border border-rose-200 bg-rose-50 text-rose-700'
+                  ? theme === 'dark' ? 'border border-red-400/30 bg-red-900/25 text-red-100' : 'border border-rose-200 bg-rose-50 text-rose-700'
                   : msg.kind === 'success'
-                  ? theme === 'dark'
-                    ? 'border border-emerald-400/30 bg-emerald-900/25 text-emerald-100'
-                    : 'border border-emerald-200 bg-emerald-50 text-emerald-700'
-                  : theme === 'dark'
-                  ? 'border border-white/20 bg-white/10 text-white'
-                  : 'border border-slate-200 bg-white text-slate-900'
-              }`}
-            >
+                  ? theme === 'dark' ? 'border border-emerald-400/30 bg-emerald-900/25 text-emerald-100' : 'border border-emerald-200 bg-emerald-50 text-emerald-700'
+                  : theme === 'dark' ? 'border border-white/20 bg-white/10 text-white' : 'border border-slate-200 bg-white text-slate-900'
+              }`}>
               {msg.text}
             </div>
           )}
 
-          {/* Form card */}
-          <div
-            className={`rounded-2xl p-5 sm:p-6 ${
-              theme === 'dark'
-                ? 'border border-white/15 bg-white/5 text-white'
-                : 'border border-slate-200 bg-white text-slate-900'
-            }`}
-          >
+          {/* Form Card */}
+          <div className={`rounded-2xl p-5 sm:p-6 ${
+              theme === 'dark' ? 'border border-white/15 bg-white/5 text-white' : 'border border-slate-200 bg-white text-slate-900'
+            }`}>
             <div className="space-y-5">
+              
               {/* Title */}
               <div>
                 <label className="block text-sm mb-1 opacity-90">
@@ -260,7 +250,7 @@ export default function CreateTicketPage() {
                 />
               </div>
 
-              {/* Category */}
+              {/* Category (DYNAMIC) */}
               <div>
                 <label className="block text-sm mb-1 opacity-90">
                   Category <span className="text-red-400">*</span>
@@ -271,13 +261,12 @@ export default function CreateTicketPage() {
                   onChange={(e) => setField('category', e.target.value)}
                 >
                   <option className="text-black" value="">Select a category…</option>
-                  <option className="text-black" value="System Issue">System Issue</option>
-                  <option className="text-black" value="Software Exception Report">Software Exception Report</option>
-                  <option className="text-black" value="Access Request / Issue">Access Request / Issue</option>
-                  <option className="text-black" value="New Feature Request">New Feature Request</option>
-                  <option className="text-black" value="Network Issue">Network Issue</option>
-                  <option className="text-black" value="Hardware Issue">Hardware Issue</option>
-                  <option className="text-black" value="Business Process / Policy Issue">Business Process / Policy Issue</option>
+                  {/* Map over categories fetched from DB */}
+                  {categories.map((cat) => (
+                    <option key={cat.id} className="text-black" value={cat.name}>
+                      {cat.name}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -294,7 +283,7 @@ export default function CreateTicketPage() {
                 </div>
               )}
 
-              {/* Impact */}
+              {/* Impact (DYNAMIC) */}
               <div>
                 <label className="block text-sm mb-1 opacity-90">
                   Impact of Issue <span className="text-red-400">*</span>
@@ -305,10 +294,12 @@ export default function CreateTicketPage() {
                   onChange={(e) => setField('impact', e.target.value)}
                 >
                   <option className="text-black" value="">Select the impact level…</option>
-                  <option className="text-black" value="Critical">Critical (System Down) — Complete outage</option>
-                  <option className="text-black" value="High">High (Key Function Affected)</option>
-                  <option className="text-black" value="Medium">Medium (Degraded Service)</option>
-                  <option className="text-black" value="Minor">Minor (Irregularities)</option>
+                  {/* Map over impacts fetched from DB */}
+                  {impacts.map((imp) => (
+                    <option key={imp.id} className="text-black" value={imp.value}>
+                      {imp.label}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -351,7 +342,7 @@ export default function CreateTicketPage() {
                 )}
               </div>
 
-              {/* Actions */}
+              {/* Buttons */}
               <div className="flex items-center justify-end gap-2 pt-2">
                 <button type="button" onClick={goBack} className={buttonGhost}>
                   Cancel
@@ -365,6 +356,7 @@ export default function CreateTicketPage() {
                   {busy ? 'Submitting…' : 'Submit Ticket'}
                 </button>
               </div>
+
             </div>
           </div>
         </main>

@@ -1,3 +1,4 @@
+//app\(dashboards)\admin\history\page.js
 'use client';
 
 import useSWR from 'swr';
