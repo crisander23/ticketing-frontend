@@ -2,11 +2,11 @@
 
 import useSWR from 'swr';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import RegisterAgentModal from '@/components/RegisterAgentModal'; // Reusing this for now
+import RegisterAgentModal from '@/components/RegisterAgentModal'; 
 import { fetcher } from '@/lib/fetcher';
 import { useAuthStore } from '@/store/useAuthStore';
 import Sidebar from '@/components/Sidebar'; 
-import { Menu, ShieldAlert } from 'lucide-react';
+import { Menu } from 'lucide-react';
 import TicketCharts from '@/components/TicketCharts'; 
 
 export default function SuperAdminDashboardPage() {
@@ -36,7 +36,6 @@ export default function SuperAdminDashboardPage() {
   const { data: tickets, error: ticketsError, isLoading: ticketsLoading, mutate: mutateTickets } =
     useSWR('/tickets', fetcher);
     
-  // Fetch ALL users (Admins + Agents + Clients)
   const { data: users, mutate: mutateUsers } = useSWR('/admin/users', fetcher);
 
   const counts = useMemo(() => {
@@ -48,7 +47,6 @@ export default function SuperAdminDashboardPage() {
       in_progress: by('in_progress'),
       resolved: by('resolved'),
       closed: by('closed'),
-      // Extra Metric for Super Admin
       admins: (users || []).filter(u => u.user_type === 'admin').length
     };
   }, [tickets, users]);
@@ -77,7 +75,7 @@ export default function SuperAdminDashboardPage() {
         amber: theme === 'dark' ? 'bg-amber-400 text-slate-900' : 'bg-amber-500 text-slate-900',
         violet: theme === 'dark' ? 'bg-violet-500 text-white' : 'bg-violet-600 text-white',
         emerald: theme === 'dark' ? 'bg-emerald-500 text-white' : 'bg-emerald-600 text-white',
-        red: theme === 'dark' ? 'bg-rose-500 text-white' : 'bg-rose-600 text-white', // For Admin Count
+        red: theme === 'dark' ? 'bg-rose-500 text-white' : 'bg-rose-600 text-white', 
       }[color] || '';
     return (
       <div className={`rounded-xl px-4 py-4 shadow-sm ${tone}`}>
@@ -100,7 +98,7 @@ export default function SuperAdminDashboardPage() {
         theme={theme}
         setTheme={handleThemeChange}
         onRefresh={refreshAll}
-        userType="superadmin" // <--- CRITICAL CHANGE
+        userType="superadmin"
       />
 
       <div className={`flex flex-col min-h-screen transition-all duration-300 ease-in-out ${
@@ -120,14 +118,9 @@ export default function SuperAdminDashboardPage() {
         {/* Main Content */}
         <main className="w-full px-4 sm:px-6 pt-4 md:pt-8 pb-8 space-y-6">
           
-          <div className="hidden md:flex justify-between items-end">
-             <div>
-                <h1 className={`text-3xl font-semibold ${cardTitle}`}>System Overview</h1>
-                <p className={`text-sm ${subTitle}`}>Super Admin Control Panel</p>
-             </div>
-             <div className={`px-3 py-1 rounded-full text-xs font-bold border ${theme === 'dark' ? 'bg-red-500/20 text-red-200 border-red-500/50' : 'bg-red-100 text-red-700 border-red-200'}`}>
-                ROOT ACCESS
-             </div>
+          <div className="hidden md:block">
+             <h1 className={`text-3xl font-semibold ${cardTitle}`}>System Overview</h1>
+             <p className={`text-sm ${subTitle}`}>Super Admin Control Panel</p>
           </div>
 
           {/* KPIs */}

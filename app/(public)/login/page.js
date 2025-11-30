@@ -1,4 +1,3 @@
-// app/(public)/login/page.js
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -26,26 +25,37 @@ export default function LoginPage() {
     }
   }, [isLoggedIn, user, router]);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault(); // <--- Critical: Prevents page reload
+  const submit = async (e) => {
+    // 1. Prevent default form submission (Crucial for Single Page Apps)
+    if (e && e.preventDefault) e.preventDefault();
+    
     if (loading) return;
-
     setLoading(true);
     setError(null);
 
     try {
+      // 2. Call API
       const raw = await apiFetch('/auth/login', { method: 'POST', body: form });
+      
+      // 3. --- CRITICAL FIX: Save Token Explicitly ---
+      // This ensures apiFetch can find the token for future requests
+      if (raw.token) {
+        localStorage.setItem('token', raw.token);
+      } else {
+        console.warn("Login succeeded but no token returned from backend:", raw);
+      }
+
+      // 4. Update Global State
       const u = normalizeUser(raw);
+      login(u); // Stores user info in Zustand
       
-      login(u); // Store user in Zustand
-      
-      // Force redirection based on the updated guard logic
+      // 5. Redirect based on Role
       const destination = routeForUser(u);
       router.replace(destination);
 
     } catch (e) {
-      // Generic error message for security
-      setError('Login failed. Please check your credentials and try again.');
+      console.error("Login error:", e);
+      setError(e.message || 'Login failed. Please check your credentials.');
     } finally {
       setLoading(false);
     }
@@ -57,12 +67,12 @@ export default function LoginPage() {
         
         {/* Header */}
         <div className="px-6 sm:px-8 pt-6 pb-4 border-b border-white/10 text-center">
-          <h1 className="text-3xl font-bold tracking-tight">NEA DDCC</h1>
+          <h1 className="text-3xl font-bold tracking-tight">NEA DDCC EC Help Desk</h1>
           <p className="mt-2 text-sm text-white/80">Sign in to your dashboard</p>
         </div>
 
-        {/* Form - Wrapped in <form> tag for Password Managers */}
-        <form onSubmit={handleSubmit} className="px-6 sm:px-8 py-6 space-y-5">
+        {/* Form */}
+        <form onSubmit={submit} className="px-6 sm:px-8 py-6 space-y-5">
           
           {/* Email */}
           <div>
@@ -71,7 +81,7 @@ export default function LoginPage() {
               <input
                 id="email"
                 type="email"
-                name="email" // Important for autocomplete
+                name="email"
                 autoComplete="email"
                 required
                 value={form.email}
@@ -89,7 +99,7 @@ export default function LoginPage() {
               <input
                 id="password"
                 type={showPw ? 'text' : 'password'}
-                name="password" // Important for autocomplete
+                name="password"
                 autoComplete="current-password"
                 required
                 value={form.password}
@@ -110,7 +120,7 @@ export default function LoginPage() {
 
           {/* Error Message */}
           {error && (
-            <div className="flex items-center gap-2 rounded-xl border border-red-400/40 bg-red-500/15 text-red-200 px-4 py-3 text-sm animate-pulse">
+            <div className="flex items-center gap-2 rounded-xl border border-red-400/40 bg-red-500/15 text-red-200 px-4 py-3 text-sm animate-pulse" role="alert">
               <AlertCircle className="h-4 w-4 shrink-0" />
               <span>{error}</span>
             </div>
